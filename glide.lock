@@ -1,0 +1,9 @@
+hash: 120d6ea44aaa40fd9bf3a4dbda27400187c17e46195eda5b18eff0b648ee11d7
+updated: 2017-04-29T10:47:25.024804665+02:00
+imports:
+- name: github.com/billziss-gh/cgofuse
+  version: 3650807204ba06ebebf426b2a22b0f4b177ff595
+  subpackages:
+  - examples/shared
+  - fuse
+testImports: []
