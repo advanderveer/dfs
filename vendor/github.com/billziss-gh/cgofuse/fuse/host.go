@@ -367,7 +367,9 @@ static inline size_t hostFsopSize(void)
 }
 */
 import "C"
-import "unsafe"
+import (
+	"unsafe"
+)
 
 // FileSystemHost is used to host a Cgofuse file system.
 type FileSystemHost struct {

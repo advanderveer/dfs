@@ -15,6 +15,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 
@@ -541,7 +542,21 @@ func NewMemfs() *Memfs {
 }
 
 func main() {
+	exitCh := make(chan os.Signal)
+	signal.Notify(exitCh, os.Interrupt)
+
 	memfs := NewMemfs()
 	host := fuse.NewFileSystemHost(memfs)
-	host.Mount(os.Args)
+	go func() {
+		fmt.Println("mounting...")
+		ok := host.Mount(os.Args)
+		if !ok {
+			os.Exit(1)
+		}
+	}()
+
+	<-exitCh
+	fmt.Println("unmounting...")
+	host.Unmount()
+	<-exitCh
 }
