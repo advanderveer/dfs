@@ -13,7 +13,7 @@
 package fuse
 
 /*
-#cgo darwin CFLAGS: -DFUSE_USE_VERSION=28 -D_FILE_OFFSET_BITS=64 -I/usr/local/include/osxfuse
+#cgo darwin CFLAGS: -DFUSE_USE_VERSION=28 -D_FILE_OFFSET_BITS=64 -I/usr/local/include/osxfuse/fuse
 #cgo darwin LDFLAGS: -L/usr/local/lib -losxfuse
 #cgo linux CFLAGS: -DFUSE_USE_VERSION=28 -D_FILE_OFFSET_BITS=64 -I/usr/include/fuse
 #cgo linux LDFLAGS: -lfuse
@@ -23,38 +23,71 @@ package fuse
 #error platform not supported
 #endif
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
 #if defined(__APPLE__) || defined(__linux__)
 
+#include <spawn.h>
+#include <sys/mount.h>
+#include <sys/wait.h>
 #include <fuse.h>
 
 #elif defined(_WIN32)
 
 #include <windows.h>
 
+static PVOID cgofuse_init_slow(int hardfail);
+static VOID  cgofuse_init_fail(VOID);
 static PVOID cgofuse_init_winfsp(VOID);
-static PVOID cgofuse_init_fail();
-static inline VOID cgofuse_init(VOID)
+
+static SRWLOCK cgofuse_lock = SRWLOCK_INIT;
+static PVOID cgofuse_module = 0;
+
+static inline PVOID cgofuse_init_fast(int hardfail)
 {
-	static SRWLOCK Lock = SRWLOCK_INIT;
-	static PVOID Module = 0;
-	AcquireSRWLockExclusive(&Lock);
+	PVOID Module = cgofuse_module;
+	MemoryBarrier();
 	if (0 == Module)
+		Module = cgofuse_init_slow(hardfail);
+	return Module;
+}
+
+static PVOID cgofuse_init_slow(int hardfail)
+{
+	PVOID Module;
+	AcquireSRWLockExclusive(&cgofuse_lock);
+	Module = cgofuse_module;
+	if (0 == Module)
+	{
 		Module = cgofuse_init_winfsp();
-	ReleaseSRWLockExclusive(&Lock);
+		MemoryBarrier();
+		cgofuse_module = Module;
+	}
+	ReleaseSRWLockExclusive(&cgofuse_lock);
+	if (0 == Module && hardfail)
+		cgofuse_init_fail();
+	return Module;
+}
+
+static VOID cgofuse_init_fail(VOID)
+{
+	static const char *message = "cgofuse: cannot find winfsp\n";
+	DWORD BytesTransferred;
+	WriteFile(GetStdHandle(STD_ERROR_HANDLE), message, lstrlenA(message), &BytesTransferred, 0);
+	ExitProcess(ERROR_DLL_NOT_FOUND);
 }
 
 #define FSP_FUSE_API                    static
 #define FSP_FUSE_API_NAME(api)          (* pfn_ ## api)
-#define FSP_FUSE_API_CALL(api)          (cgofuse_init(), pfn_ ## api)
+#define FSP_FUSE_API_CALL(api)          (cgofuse_init_fast(1), pfn_ ## api)
 #define FSP_FUSE_SYM(proto, ...)        static inline proto { __VA_ARGS__ }
-//#include <fuse_common.h>
+#include <fuse_common.h>
 #include <fuse.h>
-//#include <fuse_opt.h>
+#include <fuse_opt.h>
 
-static inline NTSTATUS FspLoad(PVOID *PModule)
+static NTSTATUS FspLoad(PVOID *PModule)
 {
 #if defined(_WIN64)
 #define FSP_DLLNAME                     "winfsp-x64.dll"
@@ -116,7 +149,7 @@ static inline NTSTATUS FspLoad(PVOID *PModule)
 
 #define CGOFUSE_GET_API(h, n)           \
 	if (0 == (*(void **)&(pfn_ ## n) = GetProcAddress(Module, #n)))\
-		return cgofuse_init_fail();
+		return 0;
 
 static PVOID cgofuse_init_winfsp(VOID)
 {
@@ -125,16 +158,14 @@ static PVOID cgofuse_init_winfsp(VOID)
 
 	Result = FspLoad(&Module);
 	if (0 > Result)
-		return cgofuse_init_fail();
+		return 0;
 
-#if 0
 	// fuse_common.h
 	CGOFUSE_GET_API(h, fsp_fuse_version);
 	CGOFUSE_GET_API(h, fsp_fuse_mount);
 	CGOFUSE_GET_API(h, fsp_fuse_unmount);
 	CGOFUSE_GET_API(h, fsp_fuse_parse_cmdline);
 	CGOFUSE_GET_API(h, fsp_fuse_ntstatus_from_errno);
-#endif
 
 	// fuse.h
 	CGOFUSE_GET_API(h, fsp_fuse_main_real);
@@ -146,7 +177,6 @@ static PVOID cgofuse_init_winfsp(VOID)
 	CGOFUSE_GET_API(h, fsp_fuse_exit);
 	CGOFUSE_GET_API(h, fsp_fuse_get_context);
 
-#if 0
 	// fuse_opt.h
 	CGOFUSE_GET_API(h, fsp_fuse_opt_parse);
 	CGOFUSE_GET_API(h, fsp_fuse_opt_add_arg);
@@ -155,14 +185,8 @@ static PVOID cgofuse_init_winfsp(VOID)
 	CGOFUSE_GET_API(h, fsp_fuse_opt_add_opt);
 	CGOFUSE_GET_API(h, fsp_fuse_opt_add_opt_escaped);
 	CGOFUSE_GET_API(h, fsp_fuse_opt_match);
-#endif
 
 	return Module;
-}
-
-static PVOID cgofuse_init_fail()
-{
-	return 0;
 }
 
 #endif
@@ -220,6 +244,22 @@ extern int hostFtruncate(char *path, fuse_off_t off, struct fuse_file_info *fi);
 extern int hostFgetattr(char *path, fuse_stat_t *stbuf, struct fuse_file_info *fi);
 //extern int hostLock(char *path, struct fuse_file_info *fi, int cmd, struct fuse_flock *lock);
 extern int hostUtimens(char *path, fuse_timespec_t tv[2]);
+
+static inline void hostAsgnCconninfo(struct fuse_conn_info *conn,
+	bool capCaseInsensitive,
+	bool capReaddirPlus)
+{
+#if defined(__APPLE__)
+	if (capCaseInsensitive)
+		FUSE_ENABLE_CASE_INSENSITIVE(conn);
+#elif defined(__linux__)
+#elif defined(_WIN32)
+	if (capCaseInsensitive)
+		conn->want |= conn->capable & FSP_FUSE_CAP_CASE_INSENSITIVE;
+	if (capReaddirPlus)
+		conn->want |= conn->capable & FSP_FUSE_CAP_READDIR_PLUS;
+#endif
+}
 
 static inline void hostCstatvfsFromFusestatfs(fuse_statvfs_t *stbuf,
 	uint64_t bsize,
@@ -311,7 +351,26 @@ static int _hostGetxattr(char *path, char *name, char *value, size_t size,
 #define _hostGetxattr hostGetxattr
 #endif
 
-static inline struct fuse_operations *hostFsop(void)
+static int hostInitializeFuse(void)
+{
+#if defined(__APPLE__) || defined(__linux__)
+	return 1;
+#elif defined(_WIN32)
+	return 0 != cgofuse_init_fast(0);
+#endif
+}
+
+static const char *hostMountpoint(int argc, char *argv[])
+{
+	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+	char *mountpoint;
+	if (-1 == fuse_parse_cmdline(&args, &mountpoint, 0, 0))
+		return 0;
+	fuse_opt_free_args(&args);
+	return mountpoint;
+}
+
+static int hostMount(int argc, char *argv[], void *data)
 {
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -355,27 +414,57 @@ static inline struct fuse_operations *hostFsop(void)
 		//.lock = (int (*)())hostFlock,
 		.utimens = (int (*)())hostUtimens,
 	};
-	return &fsop;
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
+	return 0 == fuse_main_real(argc, argv, &fsop, sizeof fsop, data);
 }
 
-static inline size_t hostFsopSize(void)
+static int hostUnmount(struct fuse *fuse, char *mountpoint)
 {
-	return sizeof(struct fuse_operations);
+#if defined(__APPLE__)
+	if (0 == mountpoint)
+		return 0;
+	// darwin: unmount is available to non-root
+	return 0 == unmount(mountpoint, MNT_FORCE);
+#elif defined(__linux__)
+	if (0 == mountpoint)
+		return 0;
+	// linux: try umount2 first in case we are root
+	if (0 == umount2(mountpoint, MNT_FORCE))
+		return 1;
+	// linux: umount2 failed; try fusermount
+	char *argv[] =
+	{
+		"/bin/fusermount",
+		"-u",
+		mountpoint,
+		0,
+	};
+	pid_t pid = 0;
+	int status = 0;
+	return
+		0 == posix_spawn(&pid, argv[0], 0, 0, argv, 0) &&
+		pid == waitpid(pid, &status, 0) &&
+		WIFEXITED(status) && 0 == WEXITSTATUS(status);
+#elif defined(_WIN32)
+	// windows/winfsp: fuse_exit just works from anywhere
+	fuse_exit(fuse);
+	return 1;
+#endif
 }
 */
 import "C"
-import (
-	"unsafe"
-)
+import "unsafe"
 
-// FileSystemHost is used to host a Cgofuse file system.
+// FileSystemHost is used to host a file system.
 type FileSystemHost struct {
 	fsop FileSystemInterface
 	hndl unsafe.Pointer
 	fuse *C.struct_fuse
+	mntp *C.char
+
+	capCaseInsensitive, capReaddirPlus bool
 }
 
 func copyCstatvfsFromFusestatfs(dst *C.fuse_statvfs_t, src *Statfs_t) {
@@ -638,24 +727,18 @@ func hostGetxattr(path0 *C.char, name0 *C.char, buff0 *C.char, size0 C.size_t) (
 	fsop := getInterfaceForHandle(C.fuse_get_context().private_data).(FileSystemInterface)
 	path := C.GoString(path0)
 	name := C.GoString(name0)
-	buff := (*[1 << 30]byte)(unsafe.Pointer(buff0))
-	size := int(size0)
-	nbyt := 0
-	fill := func(value []byte) bool {
-		nbyt = len(value)
-		if 0 != size {
-			if nbyt > size {
-				return false
-			}
-			copy(buff[:size], value)
-		}
-		return true
-	}
-	errc := fsop.Getxattr(path, name, fill)
+	errc, rslt := fsop.Getxattr(path, name)
 	if 0 != errc {
 		return C.int(errc)
 	}
-	return C.int(nbyt)
+	if 0 != size0 {
+		if len(rslt) > int(size0) {
+			return -C.int(ERANGE)
+		}
+		buff := (*[1 << 30]byte)(unsafe.Pointer(buff0))
+		copy(buff[:size0], rslt)
+	}
+	return C.int(len(rslt))
 }
 
 //export hostListxattr
@@ -757,6 +840,9 @@ func hostInit(conn0 *C.struct_fuse_conn_info) (user_data unsafe.Pointer) {
 	host := getInterfaceForHandle(fctx.private_data).(*FileSystemHost)
 	host.fuse = fctx.fuse
 	user_data = host.hndl
+	C.hostAsgnCconninfo(conn0,
+		C.bool(host.capCaseInsensitive),
+		C.bool(host.capReaddirPlus))
 	host.fsop.Init()
 	return
 }
@@ -834,11 +920,30 @@ func hostUtimens(path0 *C.char, tmsp0 *C.fuse_timespec_t) (errc0 C.int) {
 
 // NewFileSystemHost creates a file system host.
 func NewFileSystemHost(fsop FileSystemInterface) *FileSystemHost {
-	return &FileSystemHost{fsop, nil, nil}
+	host := &FileSystemHost{}
+	host.fsop = fsop
+	return host
+}
+
+// SetCapCaseInsensitive informs the host that the hosted file system is case insensitive
+// [OSX and Windows only].
+func (host *FileSystemHost) SetCapCaseInsensitive(value bool) {
+	host.capCaseInsensitive = value
+}
+
+// SetCapReaddirPlus informs the host that the hosted file system has the readdir-plus
+// capability [WinFsp only]. A file system that has the readdir-plus capability can send
+// full stat information during Readdir, thus avoiding extraneous Getattr calls.
+func (host *FileSystemHost) SetCapReaddirPlus(value bool) {
+	host.capReaddirPlus = value
 }
 
 // Mount mounts a file system.
+// The file system is considered mounted only after its Init() method has been called.
 func (host *FileSystemHost) Mount(args []string) bool {
+	if 0 == C.hostInitializeFuse() {
+		panic("cgofuse: cannot find winfsp")
+	}
 	argc := len(args) + 1
 	argv := make([]*C.char, argc+1)
 	argv[0] = C.CString(args[0])
@@ -853,17 +958,22 @@ func (host *FileSystemHost) Mount(args []string) bool {
 	defer delHandleForInterface(host.hndl)
 	hosthndl := newHandleForInterface(host)
 	defer delHandleForInterface(hosthndl)
+	host.mntp = C.hostMountpoint(C.int(argc), &argv[0])
 	defer func() {
+		C.free(unsafe.Pointer(host.mntp))
+		host.mntp = nil
 		host.fuse = nil
 	}()
-	return 0 == C.fuse_main_real(C.int(argc), &argv[0], C.hostFsop(), C.hostFsopSize(), hosthndl)
+	return 0 != C.hostMount(C.int(argc), &argv[0], hosthndl)
 }
 
-// Mount unmounts a file system.
-func (host *FileSystemHost) Unmount() {
-	if nil != host.fuse {
-		C.fuse_exit(host.fuse)
+// Unmount unmounts a mounted file system.
+// Unmount may be called at any time after the Init() method has been called.
+func (host *FileSystemHost) Unmount() bool {
+	if nil == host.fuse {
+		return false
 	}
+	return 0 != C.hostUnmount(host.fuse, host.mntp)
 }
 
 // Getcontext gets information related to a file system operation.
