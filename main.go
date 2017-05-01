@@ -93,13 +93,7 @@ type Memfs struct {
 
 // Statfs gets file system statistics.
 func (fs *Memfs) Statfs(path string, stat *fuse.Statfs_t) int {
-	stat.Bsize = 1024 * 4
-	stat.Bfree = 10000
-	stat.Bavail = 10000
-	stat.Favail = 1024 * 1024
-	stat.Ffree = stat.Favail
-	stat.Files = 383838
-	return 0
+	return -fuse.ENOSYS //@TODO implement this and return 0
 }
 
 // Mknod creates a file node.
