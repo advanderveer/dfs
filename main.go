@@ -14,6 +14,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"runtime"
@@ -562,6 +563,7 @@ func mount(host *fuse.FileSystemHost, args []string, unmountCh chan<- struct{}) 
 }
 
 func main() {
+	logs := log.New(os.Stderr, "dfs/", log.Lshortfile)
 	memfs := NewMemfs()
 	host := fuse.NewFileSystemHost(memfs)
 
@@ -570,14 +572,18 @@ func main() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 		go func() {
-			<-sigCh
+			sig := <-sigCh
+			logs.Printf("received %v, unmounting file system...", sig)
 			if !host.Unmount() {
 				os.Exit(2) //unmount failed
 			}
 		}()
 	}
 
+	logs.Printf("mounting file system...")
 	if !host.Mount(os.Args) {
 		os.Exit(1) //mount failed
 	}
+
+	//@TODO handle further teardown
 }
