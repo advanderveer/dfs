@@ -16,8 +16,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/billziss-gh/cgofuse/examples/shared"
 	"github.com/billziss-gh/cgofuse/fuse"
@@ -538,16 +540,44 @@ func NewMemfs() *Memfs {
 	return &self
 }
 
-func main() {
-	exitCh := make(chan os.Signal)
-	signal.Notify(exitCh, os.Interrupt)
+func mount(host *fuse.FileSystemHost, args []string, unmountCh chan<- struct{}) {
+	defer func() {
+		unmountCh <- struct{}{}
+	}()
 
+	if runtime.GOOS == "windows" {
+		host.Mount(args)
+		return
+	}
+
+	exitCh := make(chan os.Signal)
+	signal.Notify(exitCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-exitCh
+		host.Unmount()
+	}()
+
+	host.Mount(args)
+	return
+}
+
+func main() {
 	memfs := NewMemfs()
 	host := fuse.NewFileSystemHost(memfs)
-	fmt.Println("mounting...")
-	go host.Mount(os.Args)
 
-	<-exitCh
-	fmt.Println("unmounting...")
-	host.Unmount()
+	//if not windows we need to manage unmount on our own, concurrently get notified for SIGINT/SIGTERM and unmount, this will cause the main mount to return and exit the program
+	if runtime.GOOS != "windows" {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+		go func() {
+			<-sigCh
+			if !host.Unmount() {
+				os.Exit(2) //unmount failed
+			}
+		}()
+	}
+
+	if !host.Mount(os.Args) {
+		os.Exit(1) //mount failed
+	}
 }
