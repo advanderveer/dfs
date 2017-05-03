@@ -45,54 +45,16 @@ func resize(slice []byte, size int64, zeroinit bool) []byte {
 	return slice
 }
 
-type nodeT struct {
-	stat    fuse.Stat_t
-	xatr    map[string][]byte
-	chld    map[string]*nodeT
-	data    []byte
-	opencnt int
-}
-
-func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *nodeT {
-	tmsp := fuse.Now()
-	fs := nodeT{
-		fuse.Stat_t{
-			Dev:      dev,
-			Ino:      ino,
-			Mode:     mode,
-			Nlink:    1,
-			Uid:      uid,
-			Gid:      gid,
-			Atim:     tmsp,
-			Mtim:     tmsp,
-			Ctim:     tmsp,
-			Birthtim: tmsp,
-		},
-		nil,
-		nil,
-		nil,
-		0}
-	if fuse.S_IFDIR == fs.stat.Mode&fuse.S_IFMT {
-		fs.chld = map[string]*nodeT{}
-	}
-	return &fs
-}
-
 //Memfs is an in-memory userland filesystem (FUSE) implementation that works on OSX, Linux and Windows
 type Memfs struct {
 	fuse.FileSystemBase
-	lock sync.Mutex
-	// ino     uint64 //number of nodes, incremented with makeNode
-	// root    *nodeT
-	// lock    sync.Mutex
-	// openmap map[uint64]*nodeT
-
-	store *NodeStore
+	lock  sync.Mutex //@TODO change this into an interface
+	store *NodeStore //@TODO change this into an interface
 }
 
 // Statfs gets file system statistics.
 func (fs *Memfs) Statfs(path string, stat *fuse.Statfs_t) int {
-	return -fuse.ENOSYS //@TODO implement this and return 0
+	return -fuse.ENOSYS
 }
 
 // Mknod creates a file node.
@@ -343,7 +305,8 @@ func (fs *Memfs) Readdir(path string,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
 	defer fs.synchronize()()
-	_, _, node := fs.store.lookupNode(path, nil)
+
+	node := fs.store.getNode(path, fh)
 	fill(".", &node.stat, 0)
 	fill("..", nil, 0)
 	for name, chld := range node.chld {
@@ -451,10 +414,6 @@ func (fs *Memfs) synchronize() func() {
 func NewMemfs() *Memfs {
 	fs := Memfs{}
 	defer fs.synchronize()()
-
-	fs.store = &NodeStore{}
-	fs.store.ino++
-	fs.store.root = newNode(0, fs.store.ino, fuse.S_IFDIR|00777, 0, 0)
-	fs.store.openmap = map[uint64]*nodeT{}
+	fs.store = newNodeStore()
 	return &fs
 }

@@ -6,9 +6,17 @@ import (
 
 //NodeStore handles low-level node manipulation
 type NodeStore struct {
-	ino     uint64
-	root    *nodeT
-	openmap map[uint64]*nodeT
+	ino     uint64            //number of nodes in the tree
+	root    *nodeT            //root of the node tree
+	openmap map[uint64]*nodeT //open nodes
+}
+
+func newNodeStore() (store *NodeStore) {
+	store = &NodeStore{}
+	store.ino++
+	store.root = newNode(0, store.ino, fuse.S_IFDIR|00777, 0, 0)
+	store.openmap = map[uint64]*nodeT{}
+	return store
 }
 
 func (store *NodeStore) lookupNode(path string, ancestor *nodeT) (prnt *nodeT, name string, node *nodeT) {
