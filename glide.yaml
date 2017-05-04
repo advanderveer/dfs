@@ -1,4 +1,4 @@
 package: github.com/advanderveer/dfs
 import:
 - package: github.com/billziss-gh/cgofuse
-  version: 7f4a62c6f109f6ef5f7d3a5de98378a133757315
+  version: 47171f33a7d75a211e7a36454ae28a4144819676
