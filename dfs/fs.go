@@ -7,6 +7,7 @@ import (
 
 	"github.com/billziss-gh/cgofuse/examples/shared"
 	"github.com/billziss-gh/cgofuse/fuse"
+	"github.com/boltdb/bolt"
 )
 
 const appleResForkAttr = "com.apple.ResourceFork"
@@ -48,6 +49,7 @@ func resize(slice []byte, size int64, zeroinit bool) []byte {
 //Memfs is an in-memory userland filesystem (FUSE) implementation that works on OSX, Linux and Windows
 type Memfs struct {
 	fuse.FileSystemBase
+	db    *bolt.DB
 	lock  sync.Mutex //@TODO change this into an interface
 	store *NodeStore //@TODO change this into an interface
 }
@@ -61,6 +63,10 @@ func (fs *Memfs) Statfs(path string, stat *fuse.Statfs_t) int {
 func (fs *Memfs) Mknod(path string, mode uint32, dev uint64) (errc int) {
 	defer trace(path, mode, dev)(&errc)
 	defer fs.synchronize()()
+	return fs.doMkNod(path, mode, dev)
+}
+
+func (fs *Memfs) doMkNod(path string, mode uint32, dev uint64) (errc int) {
 	return fs.store.makeNode(path, mode, dev, nil)
 }
 
@@ -68,6 +74,10 @@ func (fs *Memfs) Mknod(path string, mode uint32, dev uint64) (errc int) {
 func (fs *Memfs) Mkdir(path string, mode uint32) (errc int) {
 	defer trace(path, mode)(&errc)
 	defer fs.synchronize()()
+	return fs.doMkdir(path, mode)
+}
+
+func (fs *Memfs) doMkdir(path string, mode uint32) (errc int) {
 	return fs.store.makeNode(path, fuse.S_IFDIR|(mode&07777), 0, nil)
 }
 
@@ -75,6 +85,10 @@ func (fs *Memfs) Mkdir(path string, mode uint32) (errc int) {
 func (fs *Memfs) Unlink(path string) (errc int) {
 	defer trace(path)(&errc)
 	defer fs.synchronize()()
+	return fs.doUnlink(path)
+}
+
+func (fs *Memfs) doUnlink(path string) (errc int) {
 	return fs.store.removeNode(path, false)
 }
 
@@ -82,6 +96,10 @@ func (fs *Memfs) Unlink(path string) (errc int) {
 func (fs *Memfs) Rmdir(path string) (errc int) {
 	defer trace(path)(&errc)
 	defer fs.synchronize()()
+	return fs.doRmdir(path)
+}
+
+func (fs *Memfs) doRmdir(path string) (errc int) {
 	return fs.store.removeNode(path, true)
 }
 
@@ -89,6 +107,10 @@ func (fs *Memfs) Rmdir(path string) (errc int) {
 func (fs *Memfs) Link(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
 	defer fs.synchronize()()
+	return fs.doLink(oldpath, newpath)
+}
+
+func (fs *Memfs) doLink(oldpath string, newpath string) (errc int) {
 	_, _, oldnode := fs.store.lookupNode(oldpath, nil)
 	if nil == oldnode {
 		return -fuse.ENOENT
@@ -113,6 +135,10 @@ func (fs *Memfs) Link(oldpath string, newpath string) (errc int) {
 func (fs *Memfs) Symlink(target string, newpath string) (errc int) {
 	defer trace(target, newpath)(&errc)
 	defer fs.synchronize()()
+	return fs.doSymlink(target, newpath)
+}
+
+func (fs *Memfs) doSymlink(target string, newpath string) (errc int) {
 	return fs.store.makeNode(newpath, fuse.S_IFLNK|00777, 0, []byte(target))
 }
 
@@ -120,6 +146,10 @@ func (fs *Memfs) Symlink(target string, newpath string) (errc int) {
 func (fs *Memfs) Readlink(path string) (errc int, target string) {
 	defer trace(path)(&errc, &target)
 	defer fs.synchronize()()
+	return fs.doReadlink(path)
+}
+
+func (fs *Memfs) doReadlink(path string) (errc int, target string) {
 	_, _, node := fs.store.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT, ""
@@ -134,6 +164,10 @@ func (fs *Memfs) Readlink(path string) (errc int, target string) {
 func (fs *Memfs) Rename(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
 	defer fs.synchronize()()
+	return fs.doRename(oldpath, newpath)
+}
+
+func (fs *Memfs) doRename(oldpath string, newpath string) (errc int) {
 	oldprnt, oldname, oldnode := fs.store.lookupNode(oldpath, nil)
 	if nil == oldnode {
 		return -fuse.ENOENT
@@ -164,6 +198,10 @@ func (fs *Memfs) Rename(oldpath string, newpath string) (errc int) {
 func (fs *Memfs) Chmod(path string, mode uint32) (errc int) {
 	defer trace(path, mode)(&errc)
 	defer fs.synchronize()()
+	return fs.doChmod(path, mode)
+}
+
+func (fs *Memfs) doChmod(path string, mode uint32) (errc int) {
 	_, _, node := fs.store.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
@@ -177,6 +215,10 @@ func (fs *Memfs) Chmod(path string, mode uint32) (errc int) {
 func (fs *Memfs) Chown(path string, uid uint32, gid uint32) (errc int) {
 	defer trace(path, uid, gid)(&errc)
 	defer fs.synchronize()()
+	return fs.doChown(path, uid, gid)
+}
+
+func (fs *Memfs) doChown(path string, uid uint32, gid uint32) (errc int) {
 	_, _, node := fs.store.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
@@ -195,6 +237,10 @@ func (fs *Memfs) Chown(path string, uid uint32, gid uint32) (errc int) {
 func (fs *Memfs) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
 	defer fs.synchronize()()
+	return fs.doUtimens(path, tmsp)
+}
+
+func (fs *Memfs) doUtimens(path string, tmsp []fuse.Timespec) (errc int) {
 	_, _, node := fs.store.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
@@ -213,6 +259,10 @@ func (fs *Memfs) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 func (fs *Memfs) Open(path string, flags int) (errc int, fh uint64) {
 	defer trace(path, flags)(&errc, &fh)
 	defer fs.synchronize()()
+	return fs.doOpen(path, flags)
+}
+
+func (fs *Memfs) doOpen(path string, flags int) (errc int, fh uint64) {
 	return fs.store.openNode(path, false)
 }
 
@@ -220,6 +270,10 @@ func (fs *Memfs) Open(path string, flags int) (errc int, fh uint64) {
 func (fs *Memfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc, stat)
 	defer fs.synchronize()()
+	return fs.doGetattr(path, stat, fh)
+}
+
+func (fs *Memfs) doGetattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 	node := fs.store.getNode(path, fh)
 	if nil == node {
 		return -fuse.ENOENT
@@ -232,6 +286,10 @@ func (fs *Memfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 func (fs *Memfs) Truncate(path string, size int64, fh uint64) (errc int) {
 	defer trace(path, size, fh)(&errc)
 	defer fs.synchronize()()
+	return fs.doTruncate(path, size, fh)
+}
+
+func (fs *Memfs) doTruncate(path string, size int64, fh uint64) (errc int) {
 	node := fs.store.getNode(path, fh)
 	if nil == node {
 		return -fuse.ENOENT
@@ -248,6 +306,10 @@ func (fs *Memfs) Truncate(path string, size int64, fh uint64) (errc int) {
 func (fs *Memfs) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	defer trace(path, buff, ofst, fh)(&n)
 	defer fs.synchronize()()
+	return fs.doRead(path, buff, ofst, fh)
+}
+
+func (fs *Memfs) doRead(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	node := fs.store.getNode(path, fh)
 	if nil == node {
 		return -fuse.ENOENT
@@ -268,6 +330,10 @@ func (fs *Memfs) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 func (fs *Memfs) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	defer trace(path, buff, ofst, fh)(&n)
 	defer fs.synchronize()()
+	return fs.doWrite(path, buff, ofst, fh)
+}
+
+func (fs *Memfs) doWrite(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	node := fs.store.getNode(path, fh)
 	if nil == node {
 		return -fuse.ENOENT
@@ -288,6 +354,10 @@ func (fs *Memfs) Write(path string, buff []byte, ofst int64, fh uint64) (n int) 
 func (fs *Memfs) Release(path string, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc)
 	defer fs.synchronize()()
+	return fs.doRelease(path, fh)
+}
+
+func (fs *Memfs) doRelease(path string, fh uint64) (errc int) {
 	return fs.store.closeNode(fh)
 }
 
@@ -295,6 +365,10 @@ func (fs *Memfs) Release(path string, fh uint64) (errc int) {
 func (fs *Memfs) Opendir(path string) (errc int, fh uint64) {
 	defer trace(path)(&errc, &fh)
 	defer fs.synchronize()()
+	return fs.doOpendir(path)
+}
+
+func (fs *Memfs) doOpendir(path string) (errc int, fh uint64) {
 	return fs.store.openNode(path, true)
 }
 
@@ -305,6 +379,13 @@ func (fs *Memfs) Readdir(path string,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
 	defer fs.synchronize()()
+	return fs.doReaddir(path, fill, ofst, fh)
+}
+
+func (fs *Memfs) doReaddir(path string,
+	fill func(name string, stat *fuse.Stat_t, ofst int64) bool,
+	ofst int64,
+	fh uint64) (errc int) {
 
 	node := fs.store.getNode(path, fh)
 	fill(".", &node.stat, 0)
@@ -321,6 +402,10 @@ func (fs *Memfs) Readdir(path string,
 func (fs *Memfs) Releasedir(path string, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc)
 	defer fs.synchronize()()
+	return fs.doReleasedir(path, fh)
+}
+
+func (fs *Memfs) doReleasedir(path string, fh uint64) (errc int) {
 	return fs.store.closeNode(fh)
 }
 
@@ -328,6 +413,10 @@ func (fs *Memfs) Releasedir(path string, fh uint64) (errc int) {
 func (fs *Memfs) Setxattr(path string, name string, value []byte, flags int) (errc int) {
 	defer trace(path, name, value, flags)(&errc)
 	defer fs.synchronize()()
+	return fs.doSetxattr(path, name, value, flags)
+}
+
+func (fs *Memfs) doSetxattr(path string, name string, value []byte, flags int) (errc int) {
 	_, _, node := fs.store.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
@@ -357,6 +446,10 @@ func (fs *Memfs) Setxattr(path string, name string, value []byte, flags int) (er
 func (fs *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
 	defer trace(path, name)(&errc, &xatr)
 	defer fs.synchronize()()
+	return fs.doGetxattr(path, name)
+}
+
+func (fs *Memfs) doGetxattr(path string, name string) (errc int, xatr []byte) {
 	_, _, node := fs.store.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT, nil
@@ -375,6 +468,10 @@ func (fs *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
 func (fs *Memfs) Removexattr(path string, name string) (errc int) {
 	defer trace(path, name)(&errc)
 	defer fs.synchronize()()
+	return fs.doRemovexattr(path, name)
+}
+
+func (fs *Memfs) doRemovexattr(path string, name string) (errc int) {
 	_, _, node := fs.store.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
@@ -393,6 +490,10 @@ func (fs *Memfs) Removexattr(path string, name string) (errc int) {
 func (fs *Memfs) Listxattr(path string, fill func(name string) bool) (errc int) {
 	defer trace(path, fill)(&errc)
 	defer fs.synchronize()()
+	return fs.doListxattr(path, fill)
+}
+
+func (fs *Memfs) doListxattr(path string, fill func(name string) bool) (errc int) {
 	_, _, node := fs.store.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
@@ -406,13 +507,19 @@ func (fs *Memfs) Listxattr(path string, fill func(name string) bool) (errc int) 
 }
 
 func (fs *Memfs) synchronize() func() {
-	fs.lock.Lock()
-	return fs.lock.Unlock
+	tx, _ := fs.db.Begin(true) //start "lock"
+
+	// fs.lock.Lock()
+	return func() {
+		// fs.lock.Unlock()
+
+		tx.Commit() //end "lock"
+	}
 }
 
 //NewMemfs sets up the filesystem
-func NewMemfs() *Memfs {
-	fs := Memfs{}
+func NewMemfs(db *bolt.DB) *Memfs {
+	fs := Memfs{db: db}
 	defer fs.synchronize()()
 	fs.store = newNodeStore()
 	return &fs

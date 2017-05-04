@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/advanderveer/dfs/dfs"
 	"github.com/billziss-gh/cgofuse/fuse"
+	"github.com/boltdb/bolt"
 )
 
 // Your (Storage) product is only as good as its test suite:
@@ -18,11 +20,17 @@ import (
 // 2/ tools: https://github.com/billziss-gh/secfs.test
 
 func TestQuickIO(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	dir, err := ioutil.TempDir("", "dfs_")
+	ok(t, err)
 
+	db, err := bolt.Open(filepath.Join(dir, "buf.db"), 0600, nil)
+	ok(t, err)
+
+	if runtime.GOOS == "windows" {
+		t.Skip("no windows testing yet")
 	} else {
 		t.Run("linux/osx fuzzing", func(t *testing.T) {
-			memfs := dfs.NewMemfs()
+			memfs := dfs.NewMemfs(db)
 			host := fuse.NewFileSystemHost(memfs)
 			dir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
 
@@ -43,6 +51,15 @@ func TestQuickIO(t *testing.T) {
 				ok(t, err)
 				equals(t, true, cmd.ProcessState.Success())
 
+				//fsx (attr)
+				cmd = exec.Command("fsx", "-e", "-N", "100", "test", "xxxxxx")
+				cmd.Dir = dir
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				err = cmd.Run()
+				ok(t, err)
+				equals(t, true, cmd.ProcessState.Success())
+
 				//fstorture
 				dira := filepath.Join(dir, "a")
 				err = os.Mkdir(dira, 0777)
@@ -52,7 +69,7 @@ func TestQuickIO(t *testing.T) {
 				err = os.Mkdir(dirb, 0777)
 				ok(t, err)
 
-				cmd = exec.Command("fstorture", dira, dirb, "6", "-c", "200")
+				cmd = exec.Command("fstorture", dira, dirb, "6", "-c", "30")
 				cmd.Dir = dir
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
