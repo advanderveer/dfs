@@ -46,481 +46,327 @@ func resize(slice []byte, size int64, zeroinit bool) []byte {
 	return slice
 }
 
-//Memfs is an in-memory userland filesystem (FUSE) implementation that works on OSX, Linux and Windows
-type Memfs struct {
+//FS is an in-memory userland filesystem (FUSE) implementation that works on OSX, Linux and Windows
+type FS struct {
 	fuse.FileSystemBase
 	db    *bolt.DB
 	lock  sync.Mutex //@TODO change this into an interface
 	store *NodeStore //@TODO change this into an interface
 }
 
+func endTx(tx *bolt.Tx, perrc *int) {
+	errc := *perrc
+	if errc >= 0 {
+		if err := tx.Commit(); err != nil {
+			errc = -fuse.ENXIO //commit failed, we're now in an incosistent state
+		}
+	} else if errc < 0 {
+		if err := tx.Rollback(); err != nil {
+			errc = -fuse.EFAULT //rollback failed, we're now in an incosistent state
+		}
+	}
+	*perrc = errc
+}
+
 // Statfs gets file system statistics.
-func (fs *Memfs) Statfs(path string, stat *fuse.Statfs_t) int {
+func (fs *FS) Statfs(path string, stat *fuse.Statfs_t) int {
 	return -fuse.ENOSYS
 }
 
 // Mknod creates a file node.
-func (fs *Memfs) Mknod(path string, mode uint32, dev uint64) (errc int) {
+func (fs *FS) Mknod(path string, mode uint32, dev uint64) (errc int) {
 	defer trace(path, mode, dev)(&errc)
-	defer fs.synchronize()()
-	return fs.doMkNod(path, mode, dev)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doMkNod(path string, mode uint32, dev uint64) (errc int) {
-	return fs.store.makeNode(path, mode, dev, nil)
+	defer endTx(tx, &errc)
+	return fs.doMkNod(tx, path, mode, dev)
 }
 
 // Mkdir creates a directory.
-func (fs *Memfs) Mkdir(path string, mode uint32) (errc int) {
+func (fs *FS) Mkdir(path string, mode uint32) (errc int) {
 	defer trace(path, mode)(&errc)
-	defer fs.synchronize()()
-	return fs.doMkdir(path, mode)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doMkdir(path string, mode uint32) (errc int) {
-	return fs.store.makeNode(path, fuse.S_IFDIR|(mode&07777), 0, nil)
+	defer endTx(tx, &errc)
+	return fs.doMkdir(tx, path, mode)
 }
 
 // Unlink removes a file.
-func (fs *Memfs) Unlink(path string) (errc int) {
+func (fs *FS) Unlink(path string) (errc int) {
 	defer trace(path)(&errc)
-	defer fs.synchronize()()
-	return fs.doUnlink(path)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doUnlink(path string) (errc int) {
-	return fs.store.removeNode(path, false)
+	defer endTx(tx, &errc)
+	return fs.doUnlink(tx, path)
 }
 
 // Rmdir removes a directory.
-func (fs *Memfs) Rmdir(path string) (errc int) {
+func (fs *FS) Rmdir(path string) (errc int) {
 	defer trace(path)(&errc)
-	defer fs.synchronize()()
-	return fs.doRmdir(path)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doRmdir(path string) (errc int) {
-	return fs.store.removeNode(path, true)
+	defer endTx(tx, &errc)
+	return fs.doRmdir(tx, path)
 }
 
 // Link creates a hard link to a file.
-func (fs *Memfs) Link(oldpath string, newpath string) (errc int) {
+func (fs *FS) Link(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
-	defer fs.synchronize()()
-	return fs.doLink(oldpath, newpath)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doLink(oldpath string, newpath string) (errc int) {
-	_, _, oldnode := fs.store.lookupNode(oldpath, nil)
-	if nil == oldnode {
-		return -fuse.ENOENT
-	}
-	newprnt, newname, newnode := fs.store.lookupNode(newpath, nil)
-	if nil == newprnt {
-		return -fuse.ENOENT
-	}
-	if nil != newnode {
-		return -fuse.EEXIST
-	}
-	oldnode.stat.Nlink++
-	newprnt.chld[newname] = oldnode
-	tmsp := fuse.Now()
-	oldnode.stat.Ctim = tmsp
-	newprnt.stat.Ctim = tmsp
-	newprnt.stat.Mtim = tmsp
-	return 0
+	defer endTx(tx, &errc)
+	return fs.doLink(tx, oldpath, newpath)
 }
 
 // Symlink creates a symbolic link.
-func (fs *Memfs) Symlink(target string, newpath string) (errc int) {
+func (fs *FS) Symlink(target string, newpath string) (errc int) {
 	defer trace(target, newpath)(&errc)
-	defer fs.synchronize()()
-	return fs.doSymlink(target, newpath)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doSymlink(target string, newpath string) (errc int) {
-	return fs.store.makeNode(newpath, fuse.S_IFLNK|00777, 0, []byte(target))
+	defer endTx(tx, &errc)
+	return fs.doSymlink(tx, target, newpath)
 }
 
 // Readlink reads the target of a symbolic link.
-func (fs *Memfs) Readlink(path string) (errc int, target string) {
+func (fs *FS) Readlink(path string) (errc int, target string) {
 	defer trace(path)(&errc, &target)
-	defer fs.synchronize()()
-	return fs.doReadlink(path)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO, "" //unable to acquire lock
+	}
 
-func (fs *Memfs) doReadlink(path string) (errc int, target string) {
-	_, _, node := fs.store.lookupNode(path, nil)
-	if nil == node {
-		return -fuse.ENOENT, ""
-	}
-	if fuse.S_IFLNK != node.stat.Mode&fuse.S_IFMT {
-		return -fuse.EINVAL, ""
-	}
-	return 0, string(node.data)
+	defer endTx(tx, &errc)
+	return fs.doReadlink(tx, path)
 }
 
 // Rename renames a file.
-func (fs *Memfs) Rename(oldpath string, newpath string) (errc int) {
+func (fs *FS) Rename(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
-	defer fs.synchronize()()
-	return fs.doRename(oldpath, newpath)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doRename(oldpath string, newpath string) (errc int) {
-	oldprnt, oldname, oldnode := fs.store.lookupNode(oldpath, nil)
-	if nil == oldnode {
-		return -fuse.ENOENT
-	}
-	newprnt, newname, newnode := fs.store.lookupNode(newpath, oldnode)
-	if nil == newprnt {
-		return -fuse.ENOENT
-	}
-	if "" == newname {
-		// guard against directory loop creation
-		return -fuse.EINVAL
-	}
-	if oldprnt == newprnt && oldname == newname {
-		return 0
-	}
-	if nil != newnode {
-		errc = fs.store.removeNode(newpath, fuse.S_IFDIR == oldnode.stat.Mode&fuse.S_IFMT)
-		if 0 != errc {
-			return errc
-		}
-	}
-	delete(oldprnt.chld, oldname)
-	newprnt.chld[newname] = oldnode
-	return 0
+	defer endTx(tx, &errc)
+	return fs.doRename(tx, oldpath, newpath)
 }
 
 // Chmod changes the permission bits of a file.
-func (fs *Memfs) Chmod(path string, mode uint32) (errc int) {
+func (fs *FS) Chmod(path string, mode uint32) (errc int) {
 	defer trace(path, mode)(&errc)
-	defer fs.synchronize()()
-	return fs.doChmod(path, mode)
-}
-
-func (fs *Memfs) doChmod(path string, mode uint32) (errc int) {
-	_, _, node := fs.store.lookupNode(path, nil)
-	if nil == node {
-		return -fuse.ENOENT
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
 	}
-	node.stat.Mode = (node.stat.Mode & fuse.S_IFMT) | mode&07777
-	node.stat.Ctim = fuse.Now()
-	return 0
+
+	defer endTx(tx, &errc)
+	return fs.doChmod(tx, path, mode)
 }
 
 // Chown changes the owner and group of a file.
-func (fs *Memfs) Chown(path string, uid uint32, gid uint32) (errc int) {
+func (fs *FS) Chown(path string, uid uint32, gid uint32) (errc int) {
 	defer trace(path, uid, gid)(&errc)
-	defer fs.synchronize()()
-	return fs.doChown(path, uid, gid)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doChown(path string, uid uint32, gid uint32) (errc int) {
-	_, _, node := fs.store.lookupNode(path, nil)
-	if nil == node {
-		return -fuse.ENOENT
-	}
-	if ^uint32(0) != uid {
-		node.stat.Uid = uid
-	}
-	if ^uint32(0) != gid {
-		node.stat.Gid = gid
-	}
-	node.stat.Ctim = fuse.Now()
-	return 0
+	defer endTx(tx, &errc)
+	return fs.doChown(tx, path, uid, gid)
 }
 
 // Utimens changes the access and modification times of a file.
-func (fs *Memfs) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
+func (fs *FS) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
-	defer fs.synchronize()()
-	return fs.doUtimens(path, tmsp)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doUtimens(path string, tmsp []fuse.Timespec) (errc int) {
-	_, _, node := fs.store.lookupNode(path, nil)
-	if nil == node {
-		return -fuse.ENOENT
-	}
-	if nil == tmsp {
-		tmsp0 := fuse.Now()
-		tmsa := [2]fuse.Timespec{tmsp0, tmsp0}
-		tmsp = tmsa[:]
-	}
-	node.stat.Atim = tmsp[0]
-	node.stat.Mtim = tmsp[1]
-	return 0
+	defer endTx(tx, &errc)
+	return fs.doUtimens(tx, path, tmsp)
 }
 
 // Open opens a file.
-func (fs *Memfs) Open(path string, flags int) (errc int, fh uint64) {
+func (fs *FS) Open(path string, flags int) (errc int, fh uint64) {
 	defer trace(path, flags)(&errc, &fh)
-	defer fs.synchronize()()
-	return fs.doOpen(path, flags)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO, ^uint64(0) //unable to acquire lock
+	}
 
-func (fs *Memfs) doOpen(path string, flags int) (errc int, fh uint64) {
-	return fs.store.openNode(path, false)
+	defer endTx(tx, &errc)
+	return fs.doOpen(tx, path, flags)
 }
 
 // Getattr gets file attributes.
-func (fs *Memfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
+func (fs *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc, stat)
-	defer fs.synchronize()()
-	return fs.doGetattr(path, stat, fh)
-}
-
-func (fs *Memfs) doGetattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
-	node := fs.store.getNode(path, fh)
-	if nil == node {
-		return -fuse.ENOENT
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
 	}
-	*stat = node.stat
-	return 0
+
+	defer endTx(tx, &errc)
+	return fs.doGetattr(tx, path, stat, fh)
 }
 
 // Truncate changes the size of a file.
-func (fs *Memfs) Truncate(path string, size int64, fh uint64) (errc int) {
+func (fs *FS) Truncate(path string, size int64, fh uint64) (errc int) {
 	defer trace(path, size, fh)(&errc)
-	defer fs.synchronize()()
-	return fs.doTruncate(path, size, fh)
-}
-
-func (fs *Memfs) doTruncate(path string, size int64, fh uint64) (errc int) {
-	node := fs.store.getNode(path, fh)
-	if nil == node {
-		return -fuse.ENOENT
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
 	}
-	node.data = resize(node.data, size, true)
-	node.stat.Size = size
-	tmsp := fuse.Now()
-	node.stat.Ctim = tmsp
-	node.stat.Mtim = tmsp
-	return 0
+
+	defer endTx(tx, &errc)
+	return fs.doTruncate(tx, path, size, fh)
 }
 
 // Read reads data from a file.
-func (fs *Memfs) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
+func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	defer trace(path, buff, ofst, fh)(&n)
-	defer fs.synchronize()()
-	return fs.doRead(path, buff, ofst, fh)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doRead(path string, buff []byte, ofst int64, fh uint64) (n int) {
-	node := fs.store.getNode(path, fh)
-	if nil == node {
-		return -fuse.ENOENT
-	}
-	endofst := ofst + int64(len(buff))
-	if endofst > node.stat.Size {
-		endofst = node.stat.Size
-	}
-	if endofst < ofst {
-		return 0
-	}
-	n = copy(buff, node.data[ofst:endofst])
-	node.stat.Atim = fuse.Now()
-	return
+	defer endTx(tx, &n)
+	return fs.doRead(tx, path, buff, ofst, fh)
 }
 
 // Write writes data to a file.
-func (fs *Memfs) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
+func (fs *FS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	defer trace(path, buff, ofst, fh)(&n)
-	defer fs.synchronize()()
-	return fs.doWrite(path, buff, ofst, fh)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doWrite(path string, buff []byte, ofst int64, fh uint64) (n int) {
-	node := fs.store.getNode(path, fh)
-	if nil == node {
-		return -fuse.ENOENT
-	}
-	endofst := ofst + int64(len(buff))
-	if endofst > node.stat.Size {
-		node.data = resize(node.data, endofst, true)
-		node.stat.Size = endofst
-	}
-	n = copy(node.data[ofst:endofst], buff)
-	tmsp := fuse.Now()
-	node.stat.Ctim = tmsp
-	node.stat.Mtim = tmsp
-	return
+	defer endTx(tx, &n)
+	return fs.doWrite(tx, path, buff, ofst, fh)
 }
 
 // Release closes an open file.
-func (fs *Memfs) Release(path string, fh uint64) (errc int) {
+func (fs *FS) Release(path string, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc)
-	defer fs.synchronize()()
-	return fs.doRelease(path, fh)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doRelease(path string, fh uint64) (errc int) {
-	return fs.store.closeNode(fh)
+	defer endTx(tx, &errc)
+	return fs.doRelease(tx, path, fh)
 }
 
 // Opendir opens a directory.
-func (fs *Memfs) Opendir(path string) (errc int, fh uint64) {
+func (fs *FS) Opendir(path string) (errc int, fh uint64) {
 	defer trace(path)(&errc, &fh)
-	defer fs.synchronize()()
-	return fs.doOpendir(path)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO, ^uint64(0)
+	}
 
-func (fs *Memfs) doOpendir(path string) (errc int, fh uint64) {
-	return fs.store.openNode(path, true)
+	defer endTx(tx, &errc)
+	return fs.doOpendir(tx, path)
 }
 
 // Readdir reads a directory.
-func (fs *Memfs) Readdir(path string,
+func (fs *FS) Readdir(path string,
 	fill func(name string, stat *fuse.Stat_t, ofst int64) bool,
 	ofst int64,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
-	defer fs.synchronize()()
-	return fs.doReaddir(path, fill, ofst, fh)
-}
-
-func (fs *Memfs) doReaddir(path string,
-	fill func(name string, stat *fuse.Stat_t, ofst int64) bool,
-	ofst int64,
-	fh uint64) (errc int) {
-
-	node := fs.store.getNode(path, fh)
-	fill(".", &node.stat, 0)
-	fill("..", nil, 0)
-	for name, chld := range node.chld {
-		if !fill(name, &chld.stat, 0) {
-			break
-		}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
 	}
-	return 0
+
+	defer endTx(tx, &errc)
+	return fs.doReaddir(tx, path, fill, ofst, fh)
 }
 
 // Releasedir closes an open directory.
-func (fs *Memfs) Releasedir(path string, fh uint64) (errc int) {
+func (fs *FS) Releasedir(path string, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc)
-	defer fs.synchronize()()
-	return fs.doReleasedir(path, fh)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doReleasedir(path string, fh uint64) (errc int) {
-	return fs.store.closeNode(fh)
+	defer endTx(tx, &errc)
+	return fs.doReleasedir(tx, path, fh)
 }
 
 // Setxattr sets extended attributes.
-func (fs *Memfs) Setxattr(path string, name string, value []byte, flags int) (errc int) {
+func (fs *FS) Setxattr(path string, name string, value []byte, flags int) (errc int) {
 	defer trace(path, name, value, flags)(&errc)
-	defer fs.synchronize()()
-	return fs.doSetxattr(path, name, value, flags)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doSetxattr(path string, name string, value []byte, flags int) (errc int) {
-	_, _, node := fs.store.lookupNode(path, nil)
-	if nil == node {
-		return -fuse.ENOENT
-	}
-	if appleResForkAttr == name {
-		return -fuse.ENOTSUP
-	}
-	if fuse.XATTR_CREATE == flags {
-		if _, ok := node.xatr[name]; ok {
-			return -fuse.EEXIST
-		}
-	} else if fuse.XATTR_REPLACE == flags {
-		if _, ok := node.xatr[name]; !ok {
-			return -fuse.ENOATTR
-		}
-	}
-	xatr := make([]byte, len(value))
-	copy(xatr, value)
-	if nil == node.xatr {
-		node.xatr = map[string][]byte{}
-	}
-	node.xatr[name] = xatr
-	return 0
+	defer endTx(tx, &errc)
+	return fs.doSetxattr(tx, path, name, value, flags)
 }
 
 // Getxattr gets extended attributes.
-func (fs *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
+func (fs *FS) Getxattr(path string, name string) (errc int, xatr []byte) {
 	defer trace(path, name)(&errc, &xatr)
-	defer fs.synchronize()()
-	return fs.doGetxattr(path, name)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO, nil //unable to acquire lock
+	}
 
-func (fs *Memfs) doGetxattr(path string, name string) (errc int, xatr []byte) {
-	_, _, node := fs.store.lookupNode(path, nil)
-	if nil == node {
-		return -fuse.ENOENT, nil
-	}
-	if appleResForkAttr == name {
-		return -fuse.ENOTSUP, nil
-	}
-	xatr, ok := node.xatr[name]
-	if !ok {
-		return -fuse.ENOATTR, nil
-	}
-	return 0, xatr
+	defer endTx(tx, &errc)
+	return fs.doGetxattr(tx, path, name)
 }
 
 // Removexattr removes extended attributes.
-func (fs *Memfs) Removexattr(path string, name string) (errc int) {
+func (fs *FS) Removexattr(path string, name string) (errc int) {
 	defer trace(path, name)(&errc)
-	defer fs.synchronize()()
-	return fs.doRemovexattr(path, name)
-}
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
 
-func (fs *Memfs) doRemovexattr(path string, name string) (errc int) {
-	_, _, node := fs.store.lookupNode(path, nil)
-	if nil == node {
-		return -fuse.ENOENT
-	}
-	if appleResForkAttr == name {
-		return -fuse.ENOTSUP
-	}
-	if _, ok := node.xatr[name]; !ok {
-		return -fuse.ENOATTR
-	}
-	delete(node.xatr, name)
-	return 0
+	defer endTx(tx, &errc)
+	return fs.doRemovexattr(tx, path, name)
 }
 
 // Listxattr lists extended attributes.
-func (fs *Memfs) Listxattr(path string, fill func(name string) bool) (errc int) {
+func (fs *FS) Listxattr(path string, fill func(name string) bool) (errc int) {
 	defer trace(path, fill)(&errc)
-	defer fs.synchronize()()
-	return fs.doListxattr(path, fill)
+	tx, err := fs.db.Begin(true)
+	if err != nil {
+		return -fuse.EIO //unable to acquire lock
+	}
+
+	defer endTx(tx, &errc)
+	return fs.doListxattr(tx, path, fill)
 }
 
-func (fs *Memfs) doListxattr(path string, fill func(name string) bool) (errc int) {
-	_, _, node := fs.store.lookupNode(path, nil)
-	if nil == node {
-		return -fuse.ENOENT
-	}
-	for name := range node.xatr {
-		if !fill(name) {
-			return -fuse.ERANGE
-		}
-	}
-	return 0
-}
-
-func (fs *Memfs) synchronize() func() {
-	tx, _ := fs.db.Begin(true) //start "lock"
-
-	// fs.lock.Lock()
-	return func() {
-		// fs.lock.Unlock()
-
-		tx.Commit() //end "lock"
-	}
-}
-
-//NewMemfs sets up the filesystem
-func NewMemfs(db *bolt.DB) *Memfs {
-	fs := Memfs{db: db}
-	defer fs.synchronize()()
+//NewFS sets up the filesystem
+func NewFS(db *bolt.DB) *FS {
+	fs := FS{db: db}
 	fs.store = newNodeStore()
 	return &fs
 }

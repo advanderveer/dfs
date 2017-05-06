@@ -31,8 +31,8 @@ func main() {
 
 	logs.Printf("mounting filesystem on '%s'", os.Args[1])
 	defer logs.Printf("unmounted, done!")
-	memfs := dfs.NewMemfs(db)
-	host := fuse.NewFileSystemHost(memfs)
+	dfs := dfs.NewFS(db)
+	host := fuse.NewFileSystemHost(dfs)
 	if !host.Mount(os.Args[1], []string{}) {
 		os.Exit(1) //mount failed
 	}

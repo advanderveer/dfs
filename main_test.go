@@ -30,8 +30,8 @@ func TestQuickIO(t *testing.T) {
 		t.Skip("no windows testing yet")
 	} else {
 		t.Run("linux/osx fuzzing", func(t *testing.T) {
-			memfs := dfs.NewMemfs(db)
-			host := fuse.NewFileSystemHost(memfs)
+			dfs := dfs.NewFS(db)
+			host := fuse.NewFileSystemHost(dfs)
 			dir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
 
 			go func() {
