@@ -2,9 +2,9 @@ package dfs
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
+	"github.com/advanderveer/dfs/dfs/node"
 	"github.com/billziss-gh/cgofuse/examples/shared"
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/boltdb/bolt"
@@ -15,10 +15,6 @@ const appleResForkAttr = "com.apple.ResourceFork"
 func trace(vals ...interface{}) func(vals ...interface{}) {
 	uid, gid, _ := fuse.Getcontext()
 	return shared.Trace(1, fmt.Sprintf("[uid=%v,gid=%v]", uid, gid), vals...)
-}
-
-func split(path string) []string {
-	return strings.Split(path, "/")
 }
 
 func resize(slice []byte, size int64, zeroinit bool) []byte {
@@ -50,8 +46,8 @@ func resize(slice []byte, size int64, zeroinit bool) []byte {
 type FS struct {
 	fuse.FileSystemBase
 	db    *bolt.DB
-	lock  sync.Mutex //@TODO change this into an interface
-	store *NodeStore //@TODO change this into an interface
+	lock  sync.Mutex  //@TODO change this into an interface
+	store *node.Store //@TODO change this into an interface
 }
 
 func endTx(tx *bolt.Tx, perrc *int) {
@@ -367,6 +363,19 @@ func (fs *FS) Listxattr(path string, fill func(name string) bool) (errc int) {
 //NewFS sets up the filesystem
 func NewFS(db *bolt.DB) *FS {
 	fs := FS{db: db}
-	fs.store = newNodeStore()
+
+	nodeb := []byte("nodes")
+	if err := db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists(nodeb)
+		if b == nil || err != nil {
+			return fmt.Errorf("failed to create nodes bucket: %+v", err)
+		}
+
+		return nil
+	}); err != nil {
+		panic("unable to create prepare storage")
+	}
+
+	fs.store = node.NewStore(nodeb)
 	return &fs
 }
