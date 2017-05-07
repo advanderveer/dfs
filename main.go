@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,17 +13,12 @@ import (
 
 func main() {
 	logs := log.New(os.Stderr, "dfs/", log.Lshortfile)
-	if len(os.Args) < 2 {
-		fmt.Println("please provide the mount path")
+	if len(os.Args) < 3 {
+		fmt.Println("please provide the mount path and db dir")
 		os.Exit(1)
 	}
 
-	dir, err := ioutil.TempDir("", "dfs_")
-	if err != nil {
-		logs.Fatalf("failed to create file system store directory: %v", err)
-	}
-
-	db, err := bolt.Open(filepath.Join(dir, "buf.db"), 0600, nil)
+	db, err := bolt.Open(filepath.Join(os.Args[2]), 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

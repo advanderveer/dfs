@@ -36,7 +36,7 @@ func (fs *FS) doLink(tx *bolt.Tx, oldpath string, newpath string) (errc int) {
 
 	//node manipulation
 	oldnode.Stat.Nlink++
-	newprnt.PutChld(newname, oldnode)
+	newprnt.PutChld(tx, newname, oldnode)
 	tmsp := fuse.Now()
 	oldnode.Stat.Ctim = tmsp
 	newprnt.Stat.Ctim = tmsp
@@ -82,8 +82,8 @@ func (fs *FS) doRename(tx *bolt.Tx, oldpath string, newpath string) (errc int) {
 			return errc
 		}
 	}
-	oldprnt.DelChld(oldname)
-	newprnt.PutChld(newname, oldnode)
+	oldprnt.DelChld(tx, oldname)
+	newprnt.PutChld(tx, newname, oldnode)
 	return 0
 }
 
@@ -204,7 +204,7 @@ func (fs *FS) doReaddir(tx *bolt.Tx, path string,
 	node := fs.store.GetNode(tx, path, fh)
 	fill(".", &node.Stat, 0)
 	fill("..", nil, 0)
-	for name, chld := range node.ListChld() {
+	for name, chld := range node.ListChld(tx) {
 		if !fill(name, &chld.Stat, 0) {
 			break
 		}

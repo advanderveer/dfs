@@ -52,15 +52,17 @@ type FS struct {
 
 func endTx(tx *bolt.Tx, perrc *int) {
 	errc := *perrc
-	if errc >= 0 {
-		if err := tx.Commit(); err != nil {
-			errc = -fuse.ENXIO //commit failed, we're now in an incosistent state
-		}
-	} else if errc < 0 {
-		if err := tx.Rollback(); err != nil {
-			errc = -fuse.EFAULT //rollback failed, we're now in an incosistent state
-		}
+	// if errc >= 0 {
+	if err := tx.Commit(); err != nil {
+		fmt.Println("FAILED TO COMMIT")
+		errc = -fuse.ENXIO //commit failed, we're now in an incosistent state
 	}
+	// } else if errc < 0 {
+	// fmt.Println("ROLLING BACK")
+	// if err := tx.Rollback(); err != nil {
+	// 	errc = -fuse.EFAULT //rollback failed, we're now in an incosistent state
+	// }
+	// }
 	*perrc = errc
 }
 
@@ -364,18 +366,6 @@ func (fs *FS) Listxattr(path string, fill func(name string) bool) (errc int) {
 func NewFS(db *bolt.DB) *FS {
 	fs := FS{db: db}
 
-	nodeb := []byte("nodes")
-	if err := db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists(nodeb)
-		if b == nil || err != nil {
-			return fmt.Errorf("failed to create nodes bucket: %+v", err)
-		}
-
-		return nil
-	}); err != nil {
-		panic("unable to create prepare storage")
-	}
-
-	fs.store = node.NewStore(nodeb)
+	fs.store = node.NewStore(db)
 	return &fs
 }

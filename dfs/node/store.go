@@ -1,24 +1,42 @@
 package node
 
 import (
+	"fmt"
+
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/boltdb/bolt"
 )
 
+var (
+	//BucketNameNodes defines what database bucket is used
+	BucketNameNodes = []byte(`nodes`)
+)
+
 //Store handles low-level node manipulation
 type Store struct {
-	bucket  []byte
+	db      *bolt.DB
 	ino     uint64        //number of nodes in the tree
 	root    *N            //root of the node tree
 	openmap map[uint64]*N //open nodes
 }
 
 //NewStore creates a new node store
-func NewStore(bucketName []byte) (store *Store) {
+func NewStore(db *bolt.DB) (store *Store) {
 	store = &Store{}
-	store.bucket = bucketName
 	store.ino++
 	store.root = newNode(0, store.ino, fuse.S_IFDIR|00777, 0, 0)
+
+	if err := db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists(BucketNameNodes)
+		if b == nil || err != nil {
+			return fmt.Errorf("failed to create nodes bucket: %+v", err)
+		}
+
+		return nil
+	}); err != nil {
+		panic("unable to setup node storage")
+	}
+
 	store.openmap = map[uint64]*N{}
 	return store
 }
@@ -35,7 +53,7 @@ func (store *Store) LookupNode(tx *bolt.Tx, path string, ancestor *N) (prnt *N, 
 			}
 			prnt, name = node, c
 
-			node = node.ListChld()[c]
+			node = node.ListChld(tx)[c]
 			if nil != ancestor && node == ancestor {
 				name = "" // special case loop condition
 				return
@@ -62,9 +80,13 @@ func (store *Store) MakeNode(tx *bolt.Tx, path string, mode uint32, dev uint64, 
 		node.Stat.Size = int64(len(data))
 		copy(node.Data, data)
 	}
-	prnt.PutChld(name, node)
+	prnt.PutChld(tx, name, node)
 	prnt.Stat.Ctim = node.Stat.Ctim
 	prnt.Stat.Mtim = node.Stat.Ctim
+
+	//prnt.Put()
+	//node.Put()
+
 	return 0
 }
 
@@ -80,15 +102,19 @@ func (store *Store) RemoveNode(tx *bolt.Tx, path string, dir bool) int {
 	if dir && fuse.S_IFDIR != node.Stat.Mode&fuse.S_IFMT {
 		return -fuse.ENOTDIR
 	}
-	if 0 < len(node.ListChld()) {
+	if 0 < len(node.ListChld(tx)) {
 		return -fuse.ENOTEMPTY
 	}
 	node.Stat.Nlink--
-	prnt.DelChld(name)
+	prnt.DelChld(tx, name)
 	tmsp := fuse.Now()
 	node.Stat.Ctim = tmsp
 	prnt.Stat.Ctim = tmsp
 	prnt.Stat.Mtim = tmsp
+
+	//node.Delete()
+	//prnt.Put()
+
 	return 0
 }
 
