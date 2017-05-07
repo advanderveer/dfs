@@ -23,14 +23,27 @@ type Store struct {
 //NewStore creates a new node store
 func NewStore(db *bolt.DB) (store *Store) {
 	store = &Store{}
-	store.ino++
-	store.root = newNode(0, store.ino, fuse.S_IFDIR|00777, 0, 0)
-
 	if err := db.Update(func(tx *bolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists(BucketNameNodes)
 		if b == nil || err != nil {
 			return fmt.Errorf("failed to create nodes bucket: %+v", err)
 		}
+
+		//get root node
+		store.root = newNode(0, 0, 0, 0, 0)
+		MustGetNode(tx, 1, store.root)
+		if store.root.Stat.Ino == 0 {
+			store.root = newNode(0, 1, fuse.S_IFDIR|00777, 0, 0)
+			store.root.Persist(tx)
+		}
+
+		//re-count inodes; @TODO store in database
+		b.ForEach(func(k, v []byte) error {
+			store.ino++
+			return nil
+		})
+
+		fmt.Printf("store has %d nodes\n", store.ino)
 
 		return nil
 	}); err != nil {
@@ -84,9 +97,8 @@ func (store *Store) MakeNode(tx *bolt.Tx, path string, mode uint32, dev uint64, 
 	prnt.Stat.Ctim = node.Stat.Ctim
 	prnt.Stat.Mtim = node.Stat.Ctim
 
-	//prnt.Put()
-	//node.Put()
-
+	prnt.Persist(tx)
+	node.Persist(tx)
 	return 0
 }
 
@@ -112,8 +124,8 @@ func (store *Store) RemoveNode(tx *bolt.Tx, path string, dir bool) int {
 	prnt.Stat.Ctim = tmsp
 	prnt.Stat.Mtim = tmsp
 
-	//node.Delete()
-	//prnt.Put()
+	//node.Delete() //@TODO remove old node?
+	prnt.Persist(tx)
 
 	return 0
 }

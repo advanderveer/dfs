@@ -50,7 +50,7 @@ func MustPutNode(tx *bolt.Tx, node *N) {
 }
 
 //MustGetNode will read a node or panic if anything fails
-func MustGetNode(tx *bolt.Tx, ino uint64) (node *N) {
+func MustGetNode(tx *bolt.Tx, ino uint64, node *N) {
 	b := tx.Bucket(BucketNameNodes)
 
 	key := make([]byte, 8)
@@ -58,17 +58,17 @@ func MustGetNode(tx *bolt.Tx, ino uint64) (node *N) {
 
 	data := b.Get(key)
 	if data == nil {
-		return nil
+		return
 	}
 
-	node = newNode(0, 0, 0, 0, 0)
 	err := json.Unmarshal(data, node)
 	if err != nil {
 		fmt.Println("Error - MustGetNode", err)
 		panic(err)
 	}
 
-	return node
+	node.initMaps()
+	return
 }
 
 //N is a filesystem node
@@ -82,18 +82,27 @@ type N struct {
 	opencnt int
 }
 
-//Ino uniquely identifes the node
-func (n *N) Ino() uint64 {
-	return n.Stat.Ino
+//Persist will write changes to disk
+func (n *N) Persist(tx *bolt.Tx) {
+	MustPutNode(tx, n)
 }
 
 //ListChld lists children of a Node
 func (n *N) ListChld(tx *bolt.Tx) (chlds map[string]*N) {
-
 	chlds = map[string]*N{}
-	for name, c := range n.chlds {
-		//@TODO load children lazily?
-		chlds[name] = c
+
+	for name, ino := range n.Chld {
+		nn, _ := n.chlds[name]
+		if nn == nil { //lazily load from disk, @TODO what we're out of memory?
+			nn = newNode(0, 0, 0, 0, 0)
+			MustGetNode(tx, ino, nn)
+			n.chlds[name] = nn
+		}
+		// else {
+		// 	MustGetNode(tx, ino, nn) //reread data from disk, keeping address
+		// }
+
+		chlds[name] = nn
 	}
 
 	return chlds
@@ -103,17 +112,33 @@ func (n *N) ListChld(tx *bolt.Tx) (chlds map[string]*N) {
 func (n *N) DelChld(tx *bolt.Tx, name string) {
 	delete(n.Chld, name)
 	delete(n.chlds, name)
+
+	//@TODO remove the node referenced to by ino
+
 }
 
 //PutChld (over)writes a (new) child
 func (n *N) PutChld(tx *bolt.Tx, name string, node *N) {
 	n.Chld[name] = node.Stat.Ino
 	n.chlds[name] = node
+
+	//@TODO put node referenced to by ino
+
+}
+
+func (n *N) initMaps() {
+	if fuse.S_IFDIR == n.Stat.Mode&fuse.S_IFMT {
+		n.chlds = map[string]*N{}
+
+		if n.Chld == nil {
+			n.Chld = map[string]uint64{}
+		}
+	}
 }
 
 func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *N {
 	tmsp := fuse.Now()
-	fs := N{
+	n := N{
 		fuse.Stat_t{
 			Dev:      dev,
 			Ino:      ino,
@@ -131,9 +156,6 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *N {
 		nil,
 		nil,
 		0}
-	if fuse.S_IFDIR == fs.Stat.Mode&fuse.S_IFMT {
-		fs.chlds = map[string]*N{}
-		fs.Chld = map[string]uint64{}
-	}
-	return &fs
+	n.initMaps()
+	return &n
 }
