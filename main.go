@@ -18,7 +18,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := bolt.Open(filepath.Join(os.Args[2]), 0600, nil)
+	db, err := bolt.Open(filepath.Join(os.Args[1]), 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func main() {
 	defer logs.Printf("unmounted, done!")
 	dfs := dfs.NewFS(db)
 	host := fuse.NewFileSystemHost(dfs)
-	if !host.Mount(os.Args[1], []string{}) {
+	if !host.Mount("", os.Args[2:]) {
 		os.Exit(1) //mount failed
 	}
 }
