@@ -41,6 +41,9 @@ func (fs *FS) doLink(tx *bolt.Tx, oldpath string, newpath string) (errc int) {
 	oldnode.Stat.Ctim = tmsp
 	newprnt.Stat.Ctim = tmsp
 	newprnt.Stat.Mtim = tmsp
+
+	newprnt.Persist(tx)
+	oldnode.Persist(tx)
 	return 0
 }
 
@@ -84,6 +87,9 @@ func (fs *FS) doRename(tx *bolt.Tx, oldpath string, newpath string) (errc int) {
 	}
 	oldprnt.DelChld(tx, oldname)
 	newprnt.PutChld(tx, newname, oldnode)
+
+	newprnt.Persist(tx)
+	oldprnt.Persist(tx)
 	return 0
 }
 
@@ -96,6 +102,8 @@ func (fs *FS) doChmod(tx *bolt.Tx, path string, mode uint32) (errc int) {
 	//node manipulation
 	node.Stat.Mode = (node.Stat.Mode & fuse.S_IFMT) | mode&07777
 	node.Stat.Ctim = fuse.Now()
+
+	node.Persist(tx)
 	return 0
 }
 
@@ -111,6 +119,8 @@ func (fs *FS) doChown(tx *bolt.Tx, path string, uid uint32, gid uint32) (errc in
 		node.Stat.Gid = gid
 	}
 	node.Stat.Ctim = fuse.Now()
+
+	node.Persist(tx)
 	return 0
 }
 
@@ -126,6 +136,8 @@ func (fs *FS) doUtimens(tx *bolt.Tx, path string, tmsp []fuse.Timespec) (errc in
 	}
 	node.Stat.Atim = tmsp[0]
 	node.Stat.Mtim = tmsp[1]
+
+	node.Persist(tx)
 	return 0
 }
 
@@ -152,6 +164,8 @@ func (fs *FS) doTruncate(tx *bolt.Tx, path string, size int64, fh uint64) (errc 
 	tmsp := fuse.Now()
 	node.Stat.Ctim = tmsp
 	node.Stat.Mtim = tmsp
+
+	node.Persist(tx)
 	return 0
 }
 
@@ -169,6 +183,8 @@ func (fs *FS) doRead(tx *bolt.Tx, path string, buff []byte, ofst int64, fh uint6
 	}
 	n = copy(buff, node.Data[ofst:endofst])
 	node.Stat.Atim = fuse.Now()
+
+	node.Persist(tx)
 	return
 }
 
@@ -186,6 +202,8 @@ func (fs *FS) doWrite(tx *bolt.Tx, path string, buff []byte, ofst int64, fh uint
 	tmsp := fuse.Now()
 	node.Stat.Ctim = tmsp
 	node.Stat.Mtim = tmsp
+
+	node.Persist(tx)
 	return
 }
 
@@ -239,6 +257,8 @@ func (fs *FS) doSetxattr(tx *bolt.Tx, path string, name string, value []byte, fl
 		node.Xatr = map[string][]byte{}
 	}
 	node.Xatr[name] = xatr
+
+	node.Persist(tx)
 	return 0
 }
 
@@ -269,6 +289,8 @@ func (fs *FS) doRemovexattr(tx *bolt.Tx, path string, name string) (errc int) {
 		return -fuse.ENOATTR
 	}
 	delete(node.Xatr, name)
+
+	node.Persist(tx)
 	return 0
 }
 

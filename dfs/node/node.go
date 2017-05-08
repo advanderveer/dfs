@@ -97,10 +97,9 @@ func (n *N) ListChld(tx *bolt.Tx) (chlds map[string]*N) {
 			nn = newNode(0, 0, 0, 0, 0)
 			MustGetNode(tx, ino, nn)
 			n.chlds[name] = nn
+		} else {
+			MustGetNode(tx, ino, nn) //reread data from disk, keeping address
 		}
-		// else {
-		// 	MustGetNode(tx, ino, nn) //reread data from disk, keeping address
-		// }
 
 		chlds[name] = nn
 	}
@@ -112,23 +111,19 @@ func (n *N) ListChld(tx *bolt.Tx) (chlds map[string]*N) {
 func (n *N) DelChld(tx *bolt.Tx, name string) {
 	delete(n.Chld, name)
 	delete(n.chlds, name)
-
-	//@TODO remove the node referenced to by ino
-
 }
 
 //PutChld (over)writes a (new) child
 func (n *N) PutChld(tx *bolt.Tx, name string, node *N) {
 	n.Chld[name] = node.Stat.Ino
 	n.chlds[name] = node
-
-	//@TODO put node referenced to by ino
-
 }
 
 func (n *N) initMaps() {
 	if fuse.S_IFDIR == n.Stat.Mode&fuse.S_IFMT {
-		n.chlds = map[string]*N{}
+		if n.chlds == nil {
+			n.chlds = map[string]*N{}
+		}
 
 		if n.Chld == nil {
 			n.Chld = map[string]uint64{}

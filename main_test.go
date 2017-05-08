@@ -19,6 +19,8 @@ import (
 // 1/ https://blogs.oracle.com/bill/entry/zfs_and_the_all_singing
 // 2/ tools: https://github.com/billziss-gh/secfs.test
 
+//@TODO find out how remounted filesystem behaves "the same" as the first mount, checksumming?
+
 func TestQuickIO(t *testing.T) {
 	dir, err := ioutil.TempDir("", "dfs_")
 	ok(t, err)
@@ -69,7 +71,7 @@ func TestQuickIO(t *testing.T) {
 				err = os.Mkdir(dirb, 0777)
 				ok(t, err)
 
-				cmd = exec.Command("fstorture", dira, dirb, "6", "-c", "1")
+				cmd = exec.Command("fstorture", dira, dirb, "6", "-c", "30")
 				cmd.Dir = dir
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr

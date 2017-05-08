@@ -144,6 +144,7 @@ func (store *Store) OpenNode(tx *bolt.Tx, path string, dir bool) (int, uint64) {
 	}
 	node.opencnt++
 	if 1 == node.opencnt {
+		// fmt.Printf("%d NODE %d (%s) OpenNode(p %p): %v\n", time.Now().UnixNano(), node.Stat.Ino, path, node, node.Stat.Mode)
 		store.openmap[node.Stat.Ino] = node
 	}
 	return 0, node.Stat.Ino
@@ -166,5 +167,7 @@ func (store *Store) GetNode(tx *bolt.Tx, path string, fh uint64) *N {
 		return node
 	}
 
+	//@TODO is the openmap in sync with our in-memory nodes?
+	// fmt.Printf("%d NODE %d (%s) GetNode(fh %d, p %p): %v\n", time.Now().UnixNano(), store.openmap[fh].Stat.Ino, path, fh, store.openmap[fh], store.openmap[fh].Stat.Mode)
 	return store.openmap[fh]
 }
