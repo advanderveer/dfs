@@ -1,21 +1,12 @@
 package dfs
 
 import (
-	"fmt"
-	"sync"
-
 	"github.com/advanderveer/dfs/dfs/node"
-	"github.com/billziss-gh/cgofuse/examples/shared"
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/boltdb/bolt"
 )
 
 const appleResForkAttr = "com.apple.ResourceFork"
-
-func trace(vals ...interface{}) func(vals ...interface{}) {
-	uid, gid, _ := fuse.Getcontext()
-	return shared.Trace(1, fmt.Sprintf("[uid=%v,gid=%v]", uid, gid), vals...)
-}
 
 func resize(slice []byte, size int64, zeroinit bool) []byte {
 	const allocunit = 64 * 1024
@@ -46,24 +37,21 @@ func resize(slice []byte, size int64, zeroinit bool) []byte {
 type FS struct {
 	fuse.FileSystemBase
 	db    *bolt.DB
-	lock  sync.Mutex  //@TODO change this into an interface
 	store *node.Store //@TODO change this into an interface
 }
 
 func endTx(tx *bolt.Tx, perrc *int) {
-	errc := *perrc
-	// if errc >= 0 {
-	if err := tx.Commit(); err != nil {
-		fmt.Println("FAILED TO COMMIT")
-		errc = -fuse.ENXIO //commit failed, we're now in an incosistent state
+	if !tx.Writable() {
+		if err := tx.Rollback(); err != nil {
+			*perrc = -fuse.EIO //rollback failed
+		}
+
+		return
 	}
-	// } else if errc < 0 {
-	// fmt.Println("ROLLING BACK")
-	// if err := tx.Rollback(); err != nil {
-	// 	errc = -fuse.EFAULT //rollback failed, we're now in an incosistent state
-	// }
-	// }
-	*perrc = errc
+
+	if err := tx.Commit(); err != nil {
+		*perrc = -fuse.ENXIO //commit failed, we're now in an incosistent state
+	}
 }
 
 // Statfs gets file system statistics.
@@ -73,10 +61,9 @@ func (fs *FS) Statfs(path string, stat *fuse.Statfs_t) int {
 
 // Mknod creates a file node.
 func (fs *FS) Mknod(path string, mode uint32, dev uint64) (errc int) {
-	defer trace(path, mode, dev)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -85,10 +72,9 @@ func (fs *FS) Mknod(path string, mode uint32, dev uint64) (errc int) {
 
 // Mkdir creates a directory.
 func (fs *FS) Mkdir(path string, mode uint32) (errc int) {
-	defer trace(path, mode)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -97,10 +83,9 @@ func (fs *FS) Mkdir(path string, mode uint32) (errc int) {
 
 // Unlink removes a file.
 func (fs *FS) Unlink(path string) (errc int) {
-	defer trace(path)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -109,10 +94,9 @@ func (fs *FS) Unlink(path string) (errc int) {
 
 // Rmdir removes a directory.
 func (fs *FS) Rmdir(path string) (errc int) {
-	defer trace(path)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -121,10 +105,9 @@ func (fs *FS) Rmdir(path string) (errc int) {
 
 // Link creates a hard link to a file.
 func (fs *FS) Link(oldpath string, newpath string) (errc int) {
-	defer trace(oldpath, newpath)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -133,10 +116,9 @@ func (fs *FS) Link(oldpath string, newpath string) (errc int) {
 
 // Symlink creates a symbolic link.
 func (fs *FS) Symlink(target string, newpath string) (errc int) {
-	defer trace(target, newpath)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -145,10 +127,9 @@ func (fs *FS) Symlink(target string, newpath string) (errc int) {
 
 // Readlink reads the target of a symbolic link.
 func (fs *FS) Readlink(path string) (errc int, target string) {
-	defer trace(path)(&errc, &target)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO, "" //unable to acquire lock
+		return -fuse.EIO, ""
 	}
 
 	defer endTx(tx, &errc)
@@ -157,10 +138,9 @@ func (fs *FS) Readlink(path string) (errc int, target string) {
 
 // Rename renames a file.
 func (fs *FS) Rename(oldpath string, newpath string) (errc int) {
-	defer trace(oldpath, newpath)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -169,10 +149,9 @@ func (fs *FS) Rename(oldpath string, newpath string) (errc int) {
 
 // Chmod changes the permission bits of a file.
 func (fs *FS) Chmod(path string, mode uint32) (errc int) {
-	defer trace(path, mode)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -181,10 +160,9 @@ func (fs *FS) Chmod(path string, mode uint32) (errc int) {
 
 // Chown changes the owner and group of a file.
 func (fs *FS) Chown(path string, uid uint32, gid uint32) (errc int) {
-	defer trace(path, uid, gid)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -193,10 +171,9 @@ func (fs *FS) Chown(path string, uid uint32, gid uint32) (errc int) {
 
 // Utimens changes the access and modification times of a file.
 func (fs *FS) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
-	defer trace(path, tmsp)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -205,10 +182,9 @@ func (fs *FS) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 
 // Open opens a file.
 func (fs *FS) Open(path string, flags int) (errc int, fh uint64) {
-	defer trace(path, flags)(&errc, &fh)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO, ^uint64(0) //unable to acquire lock
+		return -fuse.EIO, ^uint64(0)
 	}
 
 	defer endTx(tx, &errc)
@@ -217,10 +193,9 @@ func (fs *FS) Open(path string, flags int) (errc int, fh uint64) {
 
 // Getattr gets file attributes.
 func (fs *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
-	defer trace(path, fh)(&errc, stat)
-	tx, err := fs.db.Begin(true)
+	tx, err := fs.db.Begin(true) //@TODO contented lock
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -229,10 +204,9 @@ func (fs *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 
 // Truncate changes the size of a file.
 func (fs *FS) Truncate(path string, size int64, fh uint64) (errc int) {
-	defer trace(path, size, fh)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -241,10 +215,9 @@ func (fs *FS) Truncate(path string, size int64, fh uint64) (errc int) {
 
 // Read reads data from a file.
 func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
-	defer trace(path, buff, ofst, fh)(&n)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &n)
@@ -253,10 +226,9 @@ func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 
 // Write writes data to a file.
 func (fs *FS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
-	defer trace(path, buff, ofst, fh)(&n)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &n)
@@ -265,10 +237,9 @@ func (fs *FS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 
 // Release closes an open file.
 func (fs *FS) Release(path string, fh uint64) (errc int) {
-	defer trace(path, fh)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -277,7 +248,6 @@ func (fs *FS) Release(path string, fh uint64) (errc int) {
 
 // Opendir opens a directory.
 func (fs *FS) Opendir(path string) (errc int, fh uint64) {
-	defer trace(path)(&errc, &fh)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
 		return -fuse.EIO, ^uint64(0)
@@ -292,10 +262,9 @@ func (fs *FS) Readdir(path string,
 	fill func(name string, stat *fuse.Stat_t, ofst int64) bool,
 	ofst int64,
 	fh uint64) (errc int) {
-	defer trace(path, fill, ofst, fh)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -304,10 +273,9 @@ func (fs *FS) Readdir(path string,
 
 // Releasedir closes an open directory.
 func (fs *FS) Releasedir(path string, fh uint64) (errc int) {
-	defer trace(path, fh)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -316,10 +284,9 @@ func (fs *FS) Releasedir(path string, fh uint64) (errc int) {
 
 // Setxattr sets extended attributes.
 func (fs *FS) Setxattr(path string, name string, value []byte, flags int) (errc int) {
-	defer trace(path, name, value, flags)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -328,10 +295,9 @@ func (fs *FS) Setxattr(path string, name string, value []byte, flags int) (errc 
 
 // Getxattr gets extended attributes.
 func (fs *FS) Getxattr(path string, name string) (errc int, xatr []byte) {
-	defer trace(path, name)(&errc, &xatr)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO, nil //unable to acquire lock
+		return -fuse.EIO, nil
 	}
 
 	defer endTx(tx, &errc)
@@ -340,10 +306,9 @@ func (fs *FS) Getxattr(path string, name string) (errc int, xatr []byte) {
 
 // Removexattr removes extended attributes.
 func (fs *FS) Removexattr(path string, name string) (errc int) {
-	defer trace(path, name)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)
@@ -352,10 +317,9 @@ func (fs *FS) Removexattr(path string, name string) (errc int) {
 
 // Listxattr lists extended attributes.
 func (fs *FS) Listxattr(path string, fill func(name string) bool) (errc int) {
-	defer trace(path, fill)(&errc)
 	tx, err := fs.db.Begin(true)
 	if err != nil {
-		return -fuse.EIO //unable to acquire lock
+		return -fuse.EIO
 	}
 
 	defer endTx(tx, &errc)

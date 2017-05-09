@@ -1,8 +1,9 @@
 package node
 
 import (
+	"bytes"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/gob"
 	"fmt"
 	"strings"
 
@@ -32,7 +33,9 @@ func MustDelNode(tx *bolt.Tx, node *N) {
 func MustPutNode(tx *bolt.Tx, node *N) {
 	b := tx.Bucket(BucketNameNodes)
 
-	data, err := json.Marshal(node)
+	buf := bytes.NewBuffer(nil)
+	enc := gob.NewEncoder(buf)
+	err := enc.Encode(node)
 	if err != nil {
 		fmt.Println("Error 1 - MustPutNode", err)
 		panic(err)
@@ -41,12 +44,11 @@ func MustPutNode(tx *bolt.Tx, node *N) {
 	key := make([]byte, 8)
 	binary.BigEndian.PutUint64(key, node.Stat.Ino)
 
-	err = b.Put(key, data)
+	err = b.Put(key, buf.Bytes())
 	if err != nil {
 		fmt.Println("Error 2 - MustPutNode", err)
 		panic(err)
 	}
-
 }
 
 //MustGetNode will read a node or panic if anything fails
@@ -61,7 +63,9 @@ func MustGetNode(tx *bolt.Tx, ino uint64, node *N) {
 		return
 	}
 
-	err := json.Unmarshal(data, node)
+	buf := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buf)
+	err := dec.Decode(node)
 	if err != nil {
 		fmt.Println("Error - MustGetNode", err)
 		panic(err)
@@ -73,10 +77,10 @@ func MustGetNode(tx *bolt.Tx, ino uint64, node *N) {
 
 //N is a filesystem node
 type N struct {
-	Stat fuse.Stat_t       `json:"s"`
-	Data []byte            `json:"d"`
-	Xatr map[string][]byte `json:"x"`
-	Chld map[string]uint64 `json:"c"`
+	Stat fuse.Stat_t
+	Data []byte
+	Xatr map[string][]byte
+	Chld map[string]uint64
 
 	chlds   map[string]*N
 	opencnt int
@@ -90,7 +94,6 @@ func (n *N) Persist(tx *bolt.Tx) {
 //ListChld lists children of a Node
 func (n *N) ListChld(tx *bolt.Tx) (chlds map[string]*N) {
 	chlds = map[string]*N{}
-
 	for name, ino := range n.Chld {
 		nn, _ := n.chlds[name]
 		if nn == nil { //lazily load from disk, @TODO what we're out of memory?

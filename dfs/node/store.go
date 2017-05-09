@@ -14,9 +14,10 @@ var (
 
 //Store handles low-level node manipulation
 type Store struct {
-	db      *bolt.DB
-	ino     uint64        //number of nodes in the tree
-	root    *N            //root of the node tree
+	db   *bolt.DB
+	ino  uint64 //number of nodes in the tree
+	root *N     //root of the node tree
+
 	openmap map[uint64]*N //open nodes
 }
 
@@ -167,7 +168,5 @@ func (store *Store) GetNode(tx *bolt.Tx, path string, fh uint64) *N {
 		return node
 	}
 
-	//@TODO is the openmap in sync with our in-memory nodes?
-	// fmt.Printf("%d NODE %d (%s) GetNode(fh %d, p %p): %v\n", time.Now().UnixNano(), store.openmap[fh].Stat.Ino, path, fh, store.openmap[fh], store.openmap[fh].Stat.Mode)
 	return store.openmap[fh]
 }

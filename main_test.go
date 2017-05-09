@@ -79,6 +79,8 @@ func TestQuickIO(t *testing.T) {
 				ok(t, err)
 				equals(t, true, cmd.ProcessState.Success())
 
+				time.Sleep(time.Second * 5)
+
 				//done, unmount
 				ok := host.Unmount()
 				equals(t, true, ok)
