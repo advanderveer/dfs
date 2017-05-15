@@ -78,7 +78,9 @@ func MustGetNode(tx *bolt.Tx, ino uint64, node *N) {
 //N is a filesystem node
 type N struct {
 	Stat fuse.Stat_t
-	Data []byte
+
+	data []byte
+
 	Xatr map[string][]byte
 	Chld map[string]uint64
 
@@ -89,6 +91,23 @@ type N struct {
 //Persist will write changes to disk
 func (n *N) Persist(tx *bolt.Tx) {
 	MustPutNode(tx, n)
+}
+
+//ReadDataAt will read part of the data
+func (n *N) ReadDataAt(ofst, endofst int64) []byte {
+	return n.data[ofst:endofst]
+}
+
+//ReadData returns the stored byte slice
+func (n *N) ReadData() []byte {
+	return n.data
+}
+
+//WriteData will write a nodes byte slice
+func (n *N) WriteData(data []byte) {
+	n.data = make([]byte, len(data))
+	n.Stat.Size = int64(len(data))
+	copy(n.data, data)
 }
 
 //ListChld lists children of a Node

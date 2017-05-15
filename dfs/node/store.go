@@ -90,9 +90,7 @@ func (store *Store) MakeNode(tx *bolt.Tx, path string, mode uint32, dev uint64, 
 	uid, gid, _ := fuse.Getcontext()
 	node = newNode(dev, store.ino, mode, uid, gid)
 	if nil != data {
-		node.Data = make([]byte, len(data))
-		node.Stat.Size = int64(len(data))
-		copy(node.Data, data)
+		node.WriteData(data)
 	}
 	prnt.PutChld(tx, name, node)
 	prnt.Stat.Ctim = node.Stat.Ctim
@@ -145,7 +143,6 @@ func (store *Store) OpenNode(tx *bolt.Tx, path string, dir bool) (int, uint64) {
 	}
 	node.opencnt++
 	if 1 == node.opencnt {
-		// fmt.Printf("%d NODE %d (%s) OpenNode(p %p): %v\n", time.Now().UnixNano(), node.Stat.Ino, path, node, node.Stat.Mode)
 		store.openmap[node.Stat.Ino] = node
 	}
 	return 0, node.Stat.Ino

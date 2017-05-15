@@ -59,7 +59,7 @@ func (fs *FS) doReadlink(tx *bolt.Tx, path string) (errc int, target string) {
 	if fuse.S_IFLNK != node.Stat.Mode&fuse.S_IFMT {
 		return -fuse.EINVAL, ""
 	}
-	return 0, string(node.Data)
+	return 0, string(node.ReadData())
 }
 
 func (fs *FS) doRename(tx *bolt.Tx, oldpath string, newpath string) (errc int) {
@@ -159,7 +159,8 @@ func (fs *FS) doTruncate(tx *bolt.Tx, path string, size int64, fh uint64) (errc 
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	node.Data = resize(node.Data, size, true)
+
+	node.WriteData(resize(node.ReadData(), size, true))
 	node.Stat.Size = size
 	tmsp := fuse.Now()
 	node.Stat.Ctim = tmsp
@@ -181,7 +182,8 @@ func (fs *FS) doRead(tx *bolt.Tx, path string, buff []byte, ofst int64, fh uint6
 	if endofst < ofst {
 		return 0
 	}
-	n = copy(buff, node.Data[ofst:endofst])
+
+	n = copy(buff, node.ReadDataAt(ofst, endofst))
 	node.Stat.Atim = fuse.Now()
 
 	node.Persist(tx)
@@ -195,10 +197,11 @@ func (fs *FS) doWrite(tx *bolt.Tx, path string, buff []byte, ofst int64, fh uint
 	}
 	endofst := ofst + int64(len(buff))
 	if endofst > node.Stat.Size {
-		node.Data = resize(node.Data, endofst, true)
+		node.WriteData(resize(node.ReadData(), endofst, true))
 		node.Stat.Size = endofst
 	}
-	n = copy(node.Data[ofst:endofst], buff)
+
+	n = copy(node.ReadDataAt(ofst, endofst), buff)
 	tmsp := fuse.Now()
 	node.Stat.Ctim = tmsp
 	node.Stat.Mtim = tmsp

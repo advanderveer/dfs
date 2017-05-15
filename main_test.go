@@ -12,7 +12,6 @@ import (
 
 	"github.com/advanderveer/dfs/dfs"
 	"github.com/billziss-gh/cgofuse/fuse"
-	"github.com/boltdb/bolt"
 )
 
 // Your (Storage) product is only as good as its test suite:
@@ -25,14 +24,12 @@ func TestQuickIO(t *testing.T) {
 	dir, err := ioutil.TempDir("", "dfs_")
 	ok(t, err)
 
-	db, err := bolt.Open(filepath.Join(dir, "buf.db"), 0600, nil)
-	ok(t, err)
-
 	if runtime.GOOS == "windows" {
 		t.Skip("no windows testing yet")
 	} else {
 		t.Run("linux/osx fuzzing", func(t *testing.T) {
-			dfs := dfs.NewFS(db)
+			dfs, err := dfs.NewFS(dir)
+			ok(t, err)
 			host := fuse.NewFileSystemHost(dfs)
 			dir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
 

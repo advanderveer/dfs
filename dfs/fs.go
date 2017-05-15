@@ -1,6 +1,9 @@
 package dfs
 
 import (
+	"fmt"
+	"path/filepath"
+
 	"github.com/advanderveer/dfs/dfs/node"
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/boltdb/bolt"
@@ -37,7 +40,8 @@ func resize(slice []byte, size int64, zeroinit bool) []byte {
 type FS struct {
 	fuse.FileSystemBase
 	db    *bolt.DB
-	store *node.Store //@TODO change this into an interface
+	store *node.Store
+	dir   string
 }
 
 func endTx(tx *bolt.Tx, perrc *int) {
@@ -193,7 +197,7 @@ func (fs *FS) Open(path string, flags int) (errc int, fh uint64) {
 
 // Getattr gets file attributes.
 func (fs *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
-	tx, err := fs.db.Begin(true) //@TODO contented lock
+	tx, err := fs.db.Begin(true) //@TODO contended lock
 	if err != nil {
 		return -fuse.EIO
 	}
@@ -327,9 +331,14 @@ func (fs *FS) Listxattr(path string, fill func(name string) bool) (errc int) {
 }
 
 //NewFS sets up the filesystem
-func NewFS(db *bolt.DB) *FS {
-	fs := FS{db: db}
+func NewFS(dir string) (fs *FS, err error) {
+	db, err := bolt.Open(filepath.Join(dir, "metadata.db"), 0600, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open metadata database: %v", err)
+	}
 
+	fs = &FS{db: db, dir: dir}
 	fs.store = node.NewStore(db)
-	return &fs
+
+	return fs, nil
 }
