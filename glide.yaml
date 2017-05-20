@@ -1,4 +1,6 @@
 package: github.com/advanderveer/dfs
+ignore:
+  - golang.org/x/sys
 import:
 - package: github.com/billziss-gh/cgofuse
   version: 47171f33a7d75a211e7a36454ae28a4144819676

@@ -1,10 +1,9 @@
-hash: cfdf2d8879ddb51c1e6dc9871c24d51819712563605f14887e5322842cb0745d
-updated: 2017-05-04T21:16:12.374728061+02:00
+hash: db2050fe4e6a054bc7f63c333a1b570443eca21468cd602686a92797fec32a39
+updated: 2017-05-20T10:29:36.448730728+02:00
 imports:
 - name: github.com/billziss-gh/cgofuse
   version: 47171f33a7d75a211e7a36454ae28a4144819676
   subpackages:
-  - examples/shared
   - fuse
 - name: github.com/boltdb/bolt
   version: e9cf4fae01b5a8ff89d0ec6b32f0d9c9f79aefdd
