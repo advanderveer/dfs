@@ -21,24 +21,25 @@ import (
 //@TODO find out how remounted filesystem behaves "the same" as the first mount, checksumming?
 
 func TestQuickIO(t *testing.T) {
-	dir, err := ioutil.TempDir("", "dfs_")
+	dbdir, err := ioutil.TempDir("", "dfs_")
 	ok(t, err)
 
 	if runtime.GOOS == "windows" {
 		t.Skip("no windows testing yet")
 	} else {
 		t.Run("linux/osx fuzzing", func(t *testing.T) {
-			fmt.Println("dbdir:", dir)
+			fmt.Println("dbdir:", dbdir)
 
-			dfs, err := ddfs.NewFS(dir, os.Stderr)
+			dfs, err := ddfs.NewFS(dbdir, os.Stderr)
 			ok(t, err)
 			host := fuse.NewFileSystemHost(dfs)
 			host.SetCapReaddirPlus(true)
-			dir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
+
+			mntdir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
 
 			go func() {
 				for {
-					fi, err := os.Stat(dir)
+					fi, err := os.Stat(mntdir)
 					if err == nil && fi.IsDir() {
 						break
 					}
@@ -46,7 +47,7 @@ func TestQuickIO(t *testing.T) {
 
 				//fsx
 				cmd := exec.Command("fsx", "-N", "5000", "test", "xxxxxx")
-				cmd.Dir = dir
+				cmd.Dir = mntdir
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				err := cmd.Run()
@@ -55,7 +56,7 @@ func TestQuickIO(t *testing.T) {
 
 				//fsx (attr)
 				cmd = exec.Command("fsx", "-e", "-N", "100", "test", "xxxxxx")
-				cmd.Dir = dir
+				cmd.Dir = mntdir
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				err = cmd.Run()
@@ -63,21 +64,34 @@ func TestQuickIO(t *testing.T) {
 				equals(t, true, cmd.ProcessState.Success())
 
 				//fstorture
-				dira := filepath.Join(dir, "a")
+				dira := filepath.Join(mntdir, "a")
 				err = os.Mkdir(dira, 0777)
 				ok(t, err)
 
-				dirb := filepath.Join(dir, "b")
+				dirb := filepath.Join(mntdir, "b")
 				err = os.Mkdir(dirb, 0777)
 				ok(t, err)
 
 				cmd = exec.Command("fstorture", dira, dirb, "6", "-c", "30")
-				cmd.Dir = dir
+				cmd.Dir = mntdir
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				err = cmd.Run()
 				ok(t, err)
 				equals(t, true, cmd.ProcessState.Success())
+
+				t.Run("create and read link", func(t *testing.T) {
+					err := os.Symlink(dira, filepath.Join(mntdir, "c"))
+					ok(t, err)
+
+					lnk, err := os.Readlink(filepath.Join(mntdir, "c"))
+					ok(t, err)
+					equals(t, dira, lnk)
+
+					fi, err := os.Stat(filepath.Join(mntdir, "c"))
+					ok(t, err)
+					equals(t, fi.IsDir(), true)
+				})
 
 				time.Sleep(time.Second * 5)
 
@@ -86,7 +100,7 @@ func TestQuickIO(t *testing.T) {
 				equals(t, true, ok)
 			}()
 
-			ok := host.Mount(dir, []string{})
+			ok := host.Mount(mntdir, []string{})
 			equals(t, true, ok)
 		})
 	}

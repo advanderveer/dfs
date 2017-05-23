@@ -111,7 +111,8 @@ func (fs *FS) Readlink(path string) (errc int, target string) {
 	if fuse.S_IFLNK != node.stat.Mode&fuse.S_IFMT {
 		return -fuse.EINVAL, ""
 	}
-	return 0, string(node.data) //S: file based
+
+	return 0, string(node.link)
 }
 
 // Rename renames a file.

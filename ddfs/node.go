@@ -14,6 +14,7 @@ type node struct {
 	chld    map[string]*node
 	data    []byte
 	opencnt int
+	link    []byte
 
 	handle *os.File
 }
@@ -37,6 +38,7 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *node 
 		nil,
 		nil,
 		0,
+		nil,
 		nil}
 	if fuse.S_IFDIR == fs.stat.Mode&fuse.S_IFMT {
 		fs.chld = map[string]*node{}
@@ -94,7 +96,7 @@ func (fs *FS) lookupNode(path string, ancestor *node) (prnt *node, name string, 
 	return
 }
 
-func (fs *FS) makeNode(path string, mode uint32, dev uint64, data []byte) int {
+func (fs *FS) makeNode(path string, mode uint32, dev uint64, link []byte) int {
 	prnt, name, node := fs.lookupNode(path, nil)
 	if nil == prnt {
 		return -fuse.ENOENT
@@ -105,10 +107,10 @@ func (fs *FS) makeNode(path string, mode uint32, dev uint64, data []byte) int {
 	fs.ino++
 	uid, gid, _ := fuse.Getcontext()
 	node = newNode(dev, fs.ino, mode, uid, gid)
-	if nil != data {
-		node.data = make([]byte, len(data))
-		node.stat.Size = int64(len(data))
-		copy(node.data, data)
+	if nil != link {
+		node.link = make([]byte, len(link))
+		node.stat.Size = int64(len(link))
+		copy(node.link, link)
 	}
 	prnt.chld[name] = node
 	prnt.stat.Ctim = node.stat.Ctim
@@ -173,6 +175,8 @@ func (fs *FS) closeNode(fh uint64) int {
 	node := fs.openmap[fh]
 	node.opencnt--
 	if 0 == node.opencnt {
+		delete(fs.openmap, node.stat.Ino)
+
 		if node.handle == nil {
 			fs.errs <- fmt.Errorf("node '%d' has no file handle upon closing", fh)
 			return -fuse.EIO
@@ -183,7 +187,6 @@ func (fs *FS) closeNode(fh uint64) int {
 			return -fuse.EIO
 		}
 
-		delete(fs.openmap, node.stat.Ino)
 	}
 	return 0
 }
