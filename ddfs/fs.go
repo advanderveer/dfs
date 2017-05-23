@@ -87,7 +87,7 @@ func (fs *FS) Link(oldpath string, newpath string) (errc int) {
 		return -fuse.EEXIST
 	}
 	oldnode.stat.Nlink++
-	newprnt.chld[newname] = oldnode
+	newprnt.SetChild(newname, oldnode)
 	tmsp := fuse.Now()
 	oldnode.stat.Ctim = tmsp
 	newprnt.stat.Ctim = tmsp
@@ -142,8 +142,9 @@ func (fs *FS) Rename(oldpath string, newpath string) (errc int) {
 			return errc
 		}
 	}
-	delete(oldprnt.chld, oldname)
-	newprnt.chld[newname] = oldnode
+
+	oldprnt.DelChild(oldname)
+	newprnt.SetChild(newname, oldnode)
 	return 0
 }
 
@@ -320,11 +321,14 @@ func (fs *FS) Readdir(path string,
 	node := fs.openmap[fh]
 	fill(".", &node.stat, 0)
 	fill("..", nil, 0)
-	for name, chld := range node.chld {
+
+	node.EachChild(func(name string, chld *Node) bool {
 		if !fill(name, &chld.stat, 0) {
-			break
+			return false
 		}
-	}
+		return true
+	})
+
 	return 0
 }
 

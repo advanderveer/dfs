@@ -45,6 +45,32 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node 
 	return &fs
 }
 
+//EachChild calls next for each child, if it returns false it will stop
+func (node *Node) EachChild(next func(name string, n *Node) bool) {
+	for name, n := range node.chld {
+		ok := next(name, n)
+		if !ok {
+			break
+		}
+	}
+}
+
+//GetChild gets a child node by name or returns nil if it doesn't exist
+func (node *Node) GetChild(name string) (n *Node) {
+	n, _ = node.chld[name]
+	return
+}
+
+//SetChild sets a child node by name
+func (node *Node) SetChild(name string, n *Node) {
+	node.chld[name] = n
+}
+
+//DelChild deletes a child node by name
+func (node *Node) DelChild(name string) {
+	delete(node.chld, name)
+}
+
 //ReadAt implements: https://godoc.org/os#File.ReadAt
 func (node *Node) ReadAt(b []byte, off int64) (n int, err error) {
 	return node.handle.ReadAt(b, off)
@@ -70,7 +96,7 @@ func (fs *FS) lookupNode(path string, ancestor *Node) (prnt *Node, name string, 
 				panic(fuse.Error(-fuse.ENAMETOOLONG))
 			}
 			prnt, name = node, c
-			node = node.chld[c]
+			node = node.GetChild(c)
 			if nil != ancestor && node == ancestor {
 				name = "" // special case loop condition
 				return
@@ -96,7 +122,7 @@ func (fs *FS) makeNode(path string, mode uint32, dev uint64, link []byte) int {
 		node.stat.Size = int64(len(link))
 		copy(node.link, link)
 	}
-	prnt.chld[name] = node
+	prnt.SetChild(name, node)
 	prnt.stat.Ctim = node.stat.Ctim
 	prnt.stat.Mtim = node.stat.Ctim
 	return 0
@@ -113,11 +139,19 @@ func (fs *FS) removeNode(path string, dir bool) int {
 	if dir && fuse.S_IFDIR != node.stat.Mode&fuse.S_IFMT {
 		return -fuse.ENOTDIR
 	}
-	if 0 < len(node.chld) {
+
+	count := 0
+	node.EachChild(func(_ string, _ *Node) bool {
+		count++
+		return true
+	})
+
+	if 0 < count {
 		return -fuse.ENOTEMPTY
 	}
+
 	node.stat.Nlink--
-	delete(prnt.chld, name)
+	prnt.DelChild(name)
 	tmsp := fuse.Now()
 	node.stat.Ctim = tmsp
 	prnt.stat.Ctim = tmsp
