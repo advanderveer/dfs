@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/advanderveer/dfs/simple"
+	"github.com/advanderveer/dfs/ddfs"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -21,7 +21,7 @@ func main() {
 	// 	logs.Fatalf("failed to create filesystem: %v", err)
 	// }
 
-	fs := &simple.Hellofs{}
+	fs := &ddfs.FS{}
 
 	host := fuse.NewFileSystemHost(fs)
 	if !host.Mount("", os.Args[2:]) {

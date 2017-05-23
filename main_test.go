@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/advanderveer/dfs/dfs"
+	"github.com/advanderveer/dfs/ddfs"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -28,9 +28,10 @@ func TestQuickIO(t *testing.T) {
 		t.Skip("no windows testing yet")
 	} else {
 		t.Run("linux/osx fuzzing", func(t *testing.T) {
-			dfs, err := dfs.NewFS(dir)
+			dfs, err := ddfs.NewFS(dir)
 			ok(t, err)
 			host := fuse.NewFileSystemHost(dfs)
+			host.SetCapReaddirPlus(true)
 			dir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
 
 			go func() {

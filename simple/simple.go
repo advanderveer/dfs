@@ -1,6 +1,8 @@
 package simple
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -43,13 +45,18 @@ func (fs *FS) Init() {
 	fs.ReadyCh <- struct{}{}
 }
 
+func (fs *FS) blobhash(path string) string {
+	sha := sha1.Sum([]byte(path))
+	return hex.EncodeToString(sha[:])
+}
+
 //Open a file, returns a file discriptor that can be used for further interactions on the file.
 func (fs *FS) Open(path string, flags int) (errc int, fd uint64) {
 	switch path {
 	case "/" + filename:
 		var err error
 		fh := &FileHandle{}
-		fh.File, err = os.OpenFile(filepath.Join(fs.dbdir, path), flags, 0777)
+		fh.File, err = os.OpenFile(filepath.Join(fs.dbdir, fs.blobhash(path)), flags, 0777)
 		if err != nil {
 			return -fuse.EIO, ^uint64(0)
 		}
@@ -63,6 +70,19 @@ func (fs *FS) Open(path string, flags int) (errc int, fd uint64) {
 	}
 }
 
+//Release closes an open file.
+func (fs *FS) Release(path string, fd uint64) int {
+	err := fs.handles[fd].Close()
+	if err != nil {
+		fmt.Println("close", err)
+		return -fuse.EIO
+	}
+
+	//@TODO count open handles for a file
+
+	return 0
+}
+
 //Getattr returns file attributes
 func (fs *FS) Getattr(path string, stat *fuse.Stat_t, fd uint64) (errc int) {
 	switch path {
@@ -71,14 +91,17 @@ func (fs *FS) Getattr(path string, stat *fuse.Stat_t, fd uint64) (errc int) {
 		return 0
 	case "/" + filename:
 
-		fi, err := os.Stat(filepath.Join(fs.dbdir, path))
+		//@TODO this info should instead be fetched from our metadata store, the local file handle is just a persistent buffer
+
+		fi, err := os.Stat(filepath.Join(fs.dbdir, fs.blobhash(path)))
 		if err != nil {
 			fmt.Println("stat", err)
 			return -fuse.EIO
 		}
 
+		fmt.Println(uint32(fi.Mode().Perm()), fuse.S_IFREG)
+
 		stat.Mode = fuse.S_IFREG | 0777 //@TODO set this correct perms
-		// stat.Size = int64(len(contents))
 		stat.Size = fi.Size()
 		return 0
 	default:
@@ -95,16 +118,6 @@ func (fs *FS) Truncate(path string, size int64, fd uint64) int {
 	}
 
 	// contents = ""
-	return 0
-}
-
-//Release closes an open file.
-func (fs *FS) Release(path string, fd uint64) int {
-	err := fs.handles[fd].Close()
-	if err != nil {
-		fmt.Println("close", err)
-		return -fuse.EIO
-	}
 	return 0
 }
 

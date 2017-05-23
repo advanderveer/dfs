@@ -31,11 +31,11 @@ func WriteFile(filename string, data []byte, perm os.FileMode) error {
 func TestReadingFIles(t *testing.T) {
 	dbdir, err := ioutil.TempDir("", "dfs_")
 	ok(t, err)
-	err = ioutil.WriteFile(filepath.Join(dbdir, "hello"), []byte("hello, world\n"), 0777)
+	err = ioutil.WriteFile(filepath.Join(dbdir, "3be00feb429b32b7705b689475e3ab8bdf16733f"), []byte("hello, world\n"), 0777)
 	ok(t, err)
 
 	defer func() {
-		data, err := ioutil.ReadFile(filepath.Join(dbdir, "hello"))
+		data, err := ioutil.ReadFile(filepath.Join(dbdir, "3be00feb429b32b7705b689475e3ab8bdf16733f"))
 		ok(t, err)
 		equals(t, "hello, fuse\n", string(data))
 	}()
@@ -52,6 +52,11 @@ func TestReadingFIles(t *testing.T) {
 
 		<-fs.ReadyCh
 
+		// t.Run("write create file", func(t *testing.T) {
+		// 	err := ioutil.WriteFile(filepath.Join(fsdir, "hello"), []byte("hello, world\n"), 0777)
+		// 	ok(t, err)
+		// })
+
 		t.Run("read file", func(t *testing.T) {
 			data, err := ioutil.ReadFile(filepath.Join(fsdir, "hello"))
 			ok(t, err)
@@ -59,7 +64,7 @@ func TestReadingFIles(t *testing.T) {
 		})
 
 		t.Run("write file", func(t *testing.T) {
-			err := WriteFile(filepath.Join(fsdir, "hello"), []byte("hello, fuse\n"), 0777)
+			err := ioutil.WriteFile(filepath.Join(fsdir, "hello"), []byte("hello, fuse\n"), 0777)
 			ok(t, err)
 		})
 
