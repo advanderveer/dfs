@@ -12,7 +12,6 @@ type node struct {
 	stat    fuse.Stat_t
 	xatr    map[string][]byte
 	chld    map[string]*node
-	data    []byte
 	opencnt int
 	link    []byte
 
@@ -36,7 +35,6 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *node 
 		},
 		nil,
 		nil,
-		nil,
 		0,
 		nil,
 		nil}
@@ -48,32 +46,17 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *node 
 
 //implements: https://godoc.org/os#File.ReadAt
 func (node *node) ReadAt(b []byte, off int64) (n int, err error) {
-	endofst := off + int64(len(b))
-	if endofst > node.stat.Size {
-		endofst = node.stat.Size
-	}
-	if endofst < off {
-		return 0, nil
-	}
-
-	n = copy(b, node.data[off:endofst])
-	return n, nil
+	return node.handle.ReadAt(b, off)
 }
 
 //implements: https://godoc.org/os#File.WriteAt
 func (node *node) WriteAt(b []byte, off int64) (n int, err error) {
-	endofst := off + int64(len(b))
-	if endofst > node.stat.Size {
-		node.data = resize(node.data, endofst, true)
-	}
-	n = copy(node.data[off:endofst], b)
-	return n, nil
+	return node.handle.WriteAt(b, off)
 }
 
 //implements: https://godoc.org/os#File.Truncate
 func (node *node) Truncate(size int64) error {
-	node.data = resize(node.data, size, true)
-	return nil
+	return node.handle.Truncate(size)
 }
 
 func (fs *FS) lookupNode(path string, ancestor *node) (prnt *node, name string, node *node) {
@@ -187,6 +170,7 @@ func (fs *FS) closeNode(fh uint64) int {
 			return -fuse.EIO
 		}
 
+		node.handle = nil
 	}
 	return 0
 }

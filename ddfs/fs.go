@@ -3,6 +3,8 @@ package ddfs
 import (
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/billziss-gh/cgofuse/fuse"
@@ -34,7 +36,7 @@ func NewFS(dbdir string, errw io.Writer) (fs *FS, err error) {
 	fs.errs = make(chan error, 10)
 	go func() {
 		for err := range fs.errs {
-			fmt.Fprintf(errw, "FSError: %v", err)
+			fmt.Fprintf(errw, "FSError: %v\n", err)
 		}
 	}()
 
@@ -222,9 +224,15 @@ func (fs *FS) Truncate(path string, size int64, fh uint64) (errc int) {
 		return -fuse.ENOENT
 	}
 
-	err := node.Truncate(size)
+	var err error
+	if fh == ^uint64(0) {
+		err = os.Truncate(filepath.Join(fs.dbdir, fmt.Sprintf("%d", node.stat.Ino)), size)
+	} else {
+		err = node.Truncate(size)
+	}
+
 	if err != nil {
-		fs.errs <- err
+		fs.errs <- fmt.Errorf("failed to Truncate: %v", err)
 		return -fuse.EIO
 	}
 
@@ -244,9 +252,17 @@ func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 		return -fuse.ENOENT
 	}
 
+	endofst := ofst + int64(len(buff))
+	if endofst > node.stat.Size {
+		endofst = node.stat.Size
+	}
+	if endofst < ofst {
+		return 0
+	}
+
 	n, err := node.ReadAt(buff, ofst)
-	if err != nil {
-		fs.errs <- err
+	if err != nil && err != io.EOF {
+		fs.errs <- fmt.Errorf("failed to ReadAt(path: %s, ofst: %d, fh: %d): %v", path, ofst, fh, err)
 		return -fuse.EIO
 	}
 
@@ -265,7 +281,7 @@ func (fs *FS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 
 	n, err := node.WriteAt(buff, ofst)
 	if err != nil {
-		fs.errs <- err
+		fs.errs <- fmt.Errorf("failed to WriteAt: %v", err)
 		return -fuse.EIO
 	}
 
