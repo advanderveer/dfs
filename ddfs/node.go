@@ -1,6 +1,12 @@
 package ddfs
 
-import "github.com/billziss-gh/cgofuse/fuse"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/billziss-gh/cgofuse/fuse"
+)
 
 type node struct {
 	stat    fuse.Stat_t
@@ -8,6 +14,8 @@ type node struct {
 	chld    map[string]*node
 	data    []byte
 	opencnt int
+
+	handle *os.File
 }
 
 func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *node {
@@ -28,11 +36,42 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *node 
 		nil,
 		nil,
 		nil,
-		0}
+		0,
+		nil}
 	if fuse.S_IFDIR == fs.stat.Mode&fuse.S_IFMT {
 		fs.chld = map[string]*node{}
 	}
 	return &fs
+}
+
+//implements: https://godoc.org/os#File.ReadAt
+func (node *node) ReadAt(b []byte, off int64) (n int, err error) {
+	endofst := off + int64(len(b))
+	if endofst > node.stat.Size {
+		endofst = node.stat.Size
+	}
+	if endofst < off {
+		return 0, nil
+	}
+
+	n = copy(b, node.data[off:endofst])
+	return n, nil
+}
+
+//implements: https://godoc.org/os#File.WriteAt
+func (node *node) WriteAt(b []byte, off int64) (n int, err error) {
+	endofst := off + int64(len(b))
+	if endofst > node.stat.Size {
+		node.data = resize(node.data, endofst, true)
+	}
+	n = copy(node.data[off:endofst], b)
+	return n, nil
+}
+
+//implements: https://godoc.org/os#File.Truncate
+func (node *node) Truncate(size int64) error {
+	node.data = resize(node.data, size, true)
+	return nil
 }
 
 func (fs *FS) lookupNode(path string, ancestor *node) (prnt *node, name string, node *node) {
@@ -113,6 +152,18 @@ func (fs *FS) openNode(path string, dir bool) (int, uint64) {
 	}
 	node.opencnt++
 	if 1 == node.opencnt {
+
+		//open a backed file
+		var err error
+		if node.handle, err = os.OpenFile(
+			filepath.Join(fs.dbdir, fmt.Sprintf("%d", node.stat.Ino)),
+			os.O_CREATE|os.O_RDWR,
+			0777, //@TODO what kind of do we want for backend file permissions?
+		); err != nil {
+			fs.errs <- err
+			return -fuse.EIO, ^uint64(0)
+		}
+
 		fs.openmap[node.stat.Ino] = node
 	}
 	return 0, node.stat.Ino
@@ -122,6 +173,16 @@ func (fs *FS) closeNode(fh uint64) int {
 	node := fs.openmap[fh]
 	node.opencnt--
 	if 0 == node.opencnt {
+		if node.handle == nil {
+			fs.errs <- fmt.Errorf("node '%d' has no file handle upon closing", fh)
+			return -fuse.EIO
+		}
+
+		if err := node.handle.Close(); err != nil {
+			fs.errs <- fmt.Errorf("failed to close node handle: %v", err)
+			return -fuse.EIO
+		}
+
 		delete(fs.openmap, node.stat.Ino)
 	}
 	return 0

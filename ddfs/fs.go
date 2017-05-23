@@ -1,6 +1,8 @@
 package ddfs
 
 import (
+	"fmt"
+	"io"
 	"sync"
 
 	"github.com/billziss-gh/cgofuse/fuse"
@@ -17,6 +19,26 @@ type FS struct {
 	ino     uint64
 	root    *node
 	openmap map[uint64]*node
+	errs    chan error
+	dbdir   string
+}
+
+//NewFS creates a new filesystem
+func NewFS(dbdir string, errw io.Writer) (fs *FS, err error) {
+	fs = &FS{}
+	defer fs.synchronize()()
+	fs.ino++
+	fs.dbdir = dbdir
+	fs.root = newNode(0, fs.ino, fuse.S_IFDIR|00777, 0, 0)
+	fs.openmap = map[uint64]*node{}
+	fs.errs = make(chan error, 10)
+	go func() {
+		for err := range fs.errs {
+			fmt.Fprintf(errw, "FSError: %v", err)
+		}
+	}()
+
+	return fs, nil
 }
 
 //Mknod creates a file node
@@ -89,7 +111,7 @@ func (fs *FS) Readlink(path string) (errc int, target string) {
 	if fuse.S_IFLNK != node.stat.Mode&fuse.S_IFMT {
 		return -fuse.EINVAL, ""
 	}
-	return 0, string(node.data)
+	return 0, string(node.data) //S: file based
 }
 
 // Rename renames a file.
@@ -198,7 +220,13 @@ func (fs *FS) Truncate(path string, size int64, fh uint64) (errc int) {
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	node.data = resize(node.data, size, true)
+
+	err := node.Truncate(size)
+	if err != nil {
+		fs.errs <- err
+		return -fuse.EIO
+	}
+
 	node.stat.Size = size
 	tmsp := fuse.Now()
 	node.stat.Ctim = tmsp
@@ -214,14 +242,13 @@ func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	endofst := ofst + int64(len(buff))
-	if endofst > node.stat.Size {
-		endofst = node.stat.Size
+
+	n, err := node.ReadAt(buff, ofst)
+	if err != nil {
+		fs.errs <- err
+		return -fuse.EIO
 	}
-	if endofst < ofst {
-		return 0
-	}
-	n = copy(buff, node.data[ofst:endofst])
+
 	node.stat.Atim = fuse.Now()
 	return
 }
@@ -234,12 +261,18 @@ func (fs *FS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	if nil == node {
 		return -fuse.ENOENT
 	}
+
+	n, err := node.WriteAt(buff, ofst)
+	if err != nil {
+		fs.errs <- err
+		return -fuse.EIO
+	}
+
 	endofst := ofst + int64(len(buff))
-	if endofst > node.stat.Size {
-		node.data = resize(node.data, endofst, true)
+	if n > 0 && endofst > node.stat.Size {
 		node.stat.Size = endofst
 	}
-	n = copy(node.data[ofst:endofst], buff)
+
 	tmsp := fuse.Now()
 	node.stat.Ctim = tmsp
 	node.stat.Mtim = tmsp
@@ -364,14 +397,4 @@ func (fs *FS) Listxattr(path string, fill func(name string) bool) (errc int) {
 		}
 	}
 	return 0
-}
-
-//NewFS creates a new filesystem
-func NewFS(dbdir string) (fs *FS, err error) {
-	fs = &FS{}
-	defer fs.synchronize()()
-	fs.ino++
-	fs.root = newNode(0, fs.ino, fuse.S_IFDIR|00777, 0, 0)
-	fs.openmap = map[uint64]*node{}
-	return fs, nil
 }
