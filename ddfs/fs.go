@@ -19,8 +19,8 @@ type FS struct {
 	fuse.FileSystemBase
 	lock    sync.Mutex
 	ino     uint64
-	root    *node
-	openmap map[uint64]*node
+	root    *Node
+	openmap map[uint64]*Node
 	errs    chan error
 	dbdir   string
 }
@@ -32,7 +32,7 @@ func NewFS(dbdir string, errw io.Writer) (fs *FS, err error) {
 	fs.ino++
 	fs.dbdir = dbdir
 	fs.root = newNode(0, fs.ino, fuse.S_IFDIR|00777, 0, 0)
-	fs.openmap = map[uint64]*node{}
+	fs.openmap = map[uint64]*Node{}
 	fs.errs = make(chan error, 10)
 	go func() {
 		for err := range fs.errs {

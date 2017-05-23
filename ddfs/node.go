@@ -8,19 +8,20 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-type node struct {
+//Node represents a filesystem node
+type Node struct {
 	stat    fuse.Stat_t
 	xatr    map[string][]byte
-	chld    map[string]*node
+	chld    map[string]*Node
 	opencnt int
 	link    []byte
 
 	handle *os.File
 }
 
-func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *node {
+func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node {
 	tmsp := fuse.Now()
-	fs := node{
+	fs := Node{
 		fuse.Stat_t{
 			Dev:      dev,
 			Ino:      ino,
@@ -39,27 +40,27 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *node 
 		nil,
 		nil}
 	if fuse.S_IFDIR == fs.stat.Mode&fuse.S_IFMT {
-		fs.chld = map[string]*node{}
+		fs.chld = map[string]*Node{}
 	}
 	return &fs
 }
 
-//implements: https://godoc.org/os#File.ReadAt
-func (node *node) ReadAt(b []byte, off int64) (n int, err error) {
+//ReadAt implements: https://godoc.org/os#File.ReadAt
+func (node *Node) ReadAt(b []byte, off int64) (n int, err error) {
 	return node.handle.ReadAt(b, off)
 }
 
-//implements: https://godoc.org/os#File.WriteAt
-func (node *node) WriteAt(b []byte, off int64) (n int, err error) {
+//WriteAt implements: https://godoc.org/os#File.WriteAt
+func (node *Node) WriteAt(b []byte, off int64) (n int, err error) {
 	return node.handle.WriteAt(b, off)
 }
 
-//implements: https://godoc.org/os#File.Truncate
-func (node *node) Truncate(size int64) error {
+//Truncate implements: https://godoc.org/os#File.Truncate
+func (node *Node) Truncate(size int64) error {
 	return node.handle.Truncate(size)
 }
 
-func (fs *FS) lookupNode(path string, ancestor *node) (prnt *node, name string, node *node) {
+func (fs *FS) lookupNode(path string, ancestor *Node) (prnt *Node, name string, node *Node) {
 	prnt = fs.root
 	name = ""
 	node = fs.root
@@ -175,7 +176,7 @@ func (fs *FS) closeNode(fh uint64) int {
 	return 0
 }
 
-func (fs *FS) getNode(path string, fh uint64) *node {
+func (fs *FS) getNode(path string, fh uint64) *Node {
 	if ^uint64(0) == fh {
 		_, _, node := fs.lookupNode(path, nil)
 		return node
