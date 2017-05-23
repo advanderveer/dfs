@@ -87,7 +87,7 @@ func (fs *FS) Link(oldpath string, newpath string) (errc int) {
 		return -fuse.EEXIST
 	}
 	oldnode.stat.Nlink++
-	newprnt.SetChild(newname, oldnode)
+	newprnt.PutChild(newname, oldnode)
 	tmsp := fuse.Now()
 	oldnode.stat.Ctim = tmsp
 	newprnt.stat.Ctim = tmsp
@@ -144,7 +144,7 @@ func (fs *FS) Rename(oldpath string, newpath string) (errc int) {
 	}
 
 	oldprnt.DelChild(oldname)
-	newprnt.SetChild(newname, oldnode)
+	newprnt.PutChild(newname, oldnode)
 	return 0
 }
 

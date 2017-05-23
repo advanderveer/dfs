@@ -93,6 +93,12 @@ func TestQuickIO(t *testing.T) {
 					equals(t, fi.IsDir(), true)
 				})
 
+				t.Run("read dir", func(t *testing.T) {
+					fis, err := ioutil.ReadDir(mntdir)
+					ok(t, err)
+					assert(t, len(fis) > 0, "expected at least some listings, got: %d", len(fis))
+				})
+
 				time.Sleep(time.Second * 5)
 
 				//done, unmount
