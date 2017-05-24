@@ -4,97 +4,100 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-var store = map[string]*Node{}
+var store = map[uint64]*Node{}
+
+//NodeData is the persisting part of a Node
+type NodeData struct {
+	stat fuse.Stat_t
+	xatr map[string][]byte
+	link []byte
+	chld map[string]uint64
+}
 
 //Node represents a filesystem node
 type Node struct {
-	stat fuse.Stat_t
-	xatr map[string][]byte
-	// chld    map[string]*Node
-	opencnt int
-	link    []byte
+	NodeData
 
-	handle *os.File
+	opencnt int
+	handle  *os.File
 }
 
 func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node {
 	tmsp := fuse.Now()
 	fs := Node{
-		fuse.Stat_t{
-			Dev:      dev,
-			Ino:      ino,
-			Mode:     mode,
-			Nlink:    1,
-			Uid:      uid,
-			Gid:      gid,
-			Atim:     tmsp,
-			Mtim:     tmsp,
-			Ctim:     tmsp,
-			Birthtim: tmsp,
+		NodeData{
+			fuse.Stat_t{
+				Dev:      dev,
+				Ino:      ino,
+				Mode:     mode,
+				Nlink:    1,
+				Uid:      uid,
+				Gid:      gid,
+				Atim:     tmsp,
+				Mtim:     tmsp,
+				Ctim:     tmsp,
+				Birthtim: tmsp,
+			},
+			nil,
+			nil,
+			nil,
 		},
-		nil,
-		//@TODO remove below if prefixed based child storage is a thing
-		// nil,
 		0,
-		nil,
 		nil}
 	if fuse.S_IFDIR == fs.stat.Mode&fuse.S_IFMT {
-		//@TODO remove below if prefixed based child storage is a thing
-		// fs.chld = map[string]*Node{}
+		fs.chld = map[string]uint64{}
 	}
 	return &fs
 }
 
-//EachChild calls next for each child, if it returns false it will stop
-func (node *Node) EachChild(next func(name string, n *Node) bool) {
-	for name, n := range store {
-		fix := fmt.Sprintf("%d/", node.stat.Ino)
-		if !strings.HasPrefix(name, fix) {
-			continue
-		}
+//Update starts a writable transaction on the node
+func (node *Node) Update(fn func(n *NodeData) int) (errc int) {
+	return fn(&node.NodeData)
+}
 
-		name = strings.TrimPrefix(name, fix)
-		ok := next(name, n)
+//Read starts a readable transaction on the node
+func (node *Node) Read(fn func(n NodeData) int) (errc int) {
+	return fn(node.NodeData)
+}
+
+//EachChild calls next for each child, if it returns false it will stop
+func (node *NodeData) EachChild(next func(name string, n *Node) bool) {
+	for name, ino := range node.chld {
+		node, _ := store[ino]
+		ok := next(name, node)
 		if !ok {
 			break
 		}
 	}
-
-	//@TODO remove below if prefixed based child storage is a thing
-	//scan nodes with prefix node.stat.ino
-	// for name, n := range node.chld {
-	// 	ok := next(name, n)
-	// 	if !ok {
-	// 		break
-	// 	}
-	// }
 }
 
 //GetChild gets a child node by name or returns nil if it doesn't exist
-func (node *Node) GetChild(name string) (n *Node) {
-	n, _ = store[fmt.Sprintf("%d/%s", node.stat.Ino, name)]
-	//@TODO remove below if prefixed based child storage is a thing
-	// n, _ = node.chld[name]
+func (node *NodeData) GetChild(name string) (n *Node) {
+	ino, ok := node.chld[name]
+	if ok {
+		n, _ = store[ino]
+	}
+
 	return
 }
 
 //PutChild sets a child node by name
-func (node *Node) PutChild(name string, n *Node) {
-	store[fmt.Sprintf("%d/%s", node.stat.Ino, name)] = n
-	//@TODO remove below if prefixed based child storage is a thing
-	// node.chld[name] = n
+func (node *NodeData) PutChild(name string, n *Node) {
+	node.chld[name] = n.stat.Ino
+	store[n.stat.Ino] = n
 }
 
 //DelChild deletes a child node by name
-func (node *Node) DelChild(name string) {
-	delete(store, fmt.Sprintf("%d/%s", node.stat.Ino, name))
-	//@TODO remove below if prefixed based child storage is a thing
-	// delete(node.chld, name)
+func (node *NodeData) DelChild(name string) {
+	ino, ok := node.chld[name]
+	if ok {
+		delete(node.chld, name)
+		delete(store, ino)
+	}
 }
 
 //ReadAt implements: https://godoc.org/os#File.ReadAt

@@ -86,6 +86,7 @@ func (fs *FS) Link(oldpath string, newpath string) (errc int) {
 	if nil != newnode {
 		return -fuse.EEXIST
 	}
+
 	oldnode.stat.Nlink++
 	newprnt.PutChild(newname, oldnode)
 	tmsp := fuse.Now()
