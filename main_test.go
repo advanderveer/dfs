@@ -93,6 +93,19 @@ func TestQuickIO(t *testing.T) {
 					equals(t, fi.IsDir(), true)
 				})
 
+				t.Run("create and read hard link", func(t *testing.T) {
+					d := filepath.Join(mntdir, "d")
+					err := ioutil.WriteFile(d, []byte{0x01}, 0777)
+					ok(t, err)
+
+					err = os.Link(d, filepath.Join(mntdir, "e"))
+					ok(t, err)
+
+					data, err := ioutil.ReadFile(filepath.Join(mntdir, "e"))
+					ok(t, err)
+					equals(t, []byte{0x01}, data)
+				})
+
 				t.Run("read dir", func(t *testing.T) {
 					fis, err := ioutil.ReadDir(mntdir)
 					ok(t, err)
