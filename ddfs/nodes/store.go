@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,25 +39,25 @@ func NewStore(dbdir string, errs chan<- error) (store *Store, err error) {
 			return terr
 		}
 
+		//load root node
 		store.root, terr = loadNode(b, 1)
 		if terr != nil {
 			if terr != errNodeNotExist {
 				return terr
 			}
 
+			//or write a new one
 			store.root = newNode(0, 1, fuse.S_IFDIR|00777, 0, 0)
 			if terr = saveNode(b, store.root); terr != nil {
 				return terr
 			}
 		}
 
-		fmt.Println("-----------NODES:---------------")
+		//find the last ino and continue from there
 		b.ForEach(func(k, v []byte) error {
-			store.ino++
-			fmt.Printf("key=%x \t value=%s\n", k, v)
+			store.ino = binary.BigEndian.Uint64(k)
 			return nil
 		})
-		fmt.Println("--------------------------------", store.ino)
 
 		return nil
 	}); err != nil {
