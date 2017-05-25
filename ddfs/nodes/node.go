@@ -74,11 +74,8 @@ func (node *Node) PutChild(name string, n *Node) {
 
 //DelChild deletes a child node by name
 func (node *Node) DelChild(name string) {
-	// ino, ok := node.Chld[name]
-	// if ok {
 	delete(node.Chld, name)
 	delete(node.chlds, name)
-	// }
 }
 
 //ReadAt implements: https://godoc.org/os#File.ReadAt

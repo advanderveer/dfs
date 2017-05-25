@@ -50,10 +50,16 @@ func NewStore(dbdir string, errs chan<- error) (store *Store, err error) {
 		return nil, fmt.Errorf("failed to setup nodes bucket: %v", err)
 	}
 
-	store.Read(store.ino, store.root)
-	if errc := store.Write(store.root); errc != 0 {
-		return nil, fmt.Errorf("failed to write root: %v", err)
-	}
+	//@TODO attempt to load root, and save on first write
+	// if errc := store.Read(store.ino, store.root); errc != 0 {
+	// 	if errc != -fuse.ENOENT {
+	// 		return nil, fmt.Errorf("failed to read root: %v", errc)
+	// 	}
+	//
+	// 	if errc := store.Write(store.root); errc != 0 {
+	// 		return nil, fmt.Errorf("failed to write root: %v", errc)
+	// 	}
+	// }
 
 	return store, nil
 }
@@ -79,7 +85,7 @@ func (s *Store) WritePair(nodeA *Node, nodeB *Node) int {
 			return err
 		}
 
-		//A
+		//B
 		buf = bytes.NewBuffer(nil)
 		enc = gob.NewEncoder(buf)
 		err = enc.Encode(nodeA.nodeData)
@@ -90,11 +96,6 @@ func (s *Store) WritePair(nodeA *Node, nodeB *Node) int {
 		key = make([]byte, 8)
 		binary.BigEndian.PutUint64(key, nodeA.Ino())
 		return b.Put(key, buf.Bytes())
-
-		//@TODO serialize, put
-		// store[nodeA.Ino()] = nodeA.nodeData
-		// store[nodeB.Ino()] = nodeB.nodeData
-		// return nil
 	}); err != nil {
 		s.errs <- fmt.Errorf("failed to write node pair: %v", err)
 		return -fuse.EIO
@@ -132,7 +133,9 @@ func (s *Store) Write(node *Node) int {
 }
 
 //Read updates node with persisted data
-func (s *Store) Read(ino uint64, node *Node) {
+func (s *Store) Read(ino uint64, node *Node) int {
+	ErrNodeNotExist := fmt.Errorf("no such node")
+
 	if err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte("nodes"))
 
@@ -141,7 +144,7 @@ func (s *Store) Read(ino uint64, node *Node) {
 
 		data := b.Get(key)
 		if data == nil {
-			return fmt.Errorf("couldn find node '%d'", ino)
+			return ErrNodeNotExist
 		}
 
 		buf := bytes.NewBuffer(data)
@@ -157,8 +160,15 @@ func (s *Store) Read(ino uint64, node *Node) {
 		// node.nodeData, _ = store[ino]
 		return nil
 	}); err != nil {
+		if err == ErrNodeNotExist {
+			return -fuse.ENOENT
+		}
+
 		s.errs <- fmt.Errorf("failed to read node: %v", err)
+		return -fuse.EIO
 	}
+
+	return 0
 }
 
 //Lookup fetches a node by path
