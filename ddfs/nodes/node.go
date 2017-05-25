@@ -6,8 +6,6 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-var nodes = map[uint64]*Node{}
-
 type nodeData struct {
 	Stat fuse.Stat_t
 	Xatr map[string][]byte
@@ -20,6 +18,7 @@ type Node struct {
 	nodeData
 	opencnt int
 	handle  *os.File
+	chlds   map[string]*Node
 }
 
 func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node {
@@ -43,9 +42,11 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node 
 			nil,
 		},
 		0,
+		nil,
 		nil}
 	if fuse.S_IFDIR == fs.Stat.Mode&fuse.S_IFMT {
 		fs.Chld = map[string]uint64{}
+		fs.chlds = map[string]*Node{}
 	}
 	return &fs
 }
@@ -57,14 +58,8 @@ func (node *Node) Ino() uint64 {
 
 //EachChild calls next for each child, if it returns false it will stop
 func (node *Node) EachChild(next func(name string, n *Node) bool) {
-	for name, ino := range node.Chld {
-		node, ok := nodes[ino]
-		if !ok {
-			//@TODO attemp to load it if it doesn't exist(?)
-			continue
-		}
-
-		ok = next(name, node)
+	for name, child := range node.chlds {
+		ok := next(name, child)
 		if !ok {
 			break
 		}
@@ -74,16 +69,16 @@ func (node *Node) EachChild(next func(name string, n *Node) bool) {
 //PutChild sets a child node by name
 func (node *Node) PutChild(name string, n *Node) {
 	node.Chld[name] = n.Stat.Ino
-	nodes[n.Stat.Ino] = n
+	node.chlds[name] = n
 }
 
 //DelChild deletes a child node by name
 func (node *Node) DelChild(name string) {
-	ino, ok := node.Chld[name]
-	if ok {
-		delete(node.Chld, name)
-		delete(nodes, ino)
-	}
+	// ino, ok := node.Chld[name]
+	// if ok {
+	delete(node.Chld, name)
+	delete(node.chlds, name)
+	// }
 }
 
 //ReadAt implements: https://godoc.org/os#File.ReadAt

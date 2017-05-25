@@ -163,17 +163,6 @@ func (s *Store) Read(ino uint64, node *Node) {
 
 //Lookup fetches a node by path
 func (s *Store) Lookup(path string, ancestor *Node) (prnt *Node, name string, node *Node) {
-	rchild := func(node *Node, name string) (n *Node) {
-		ino, ok := node.Chld[name]
-		if ok {
-			n, ok = nodes[ino]
-			if ok {
-				s.Read(ino, n)
-			}
-		}
-		return n
-	}
-
 	prnt = s.root
 	name = ""
 	node = s.root
@@ -183,8 +172,7 @@ func (s *Store) Lookup(path string, ancestor *Node) (prnt *Node, name string, no
 				panic(fuse.Error(-fuse.ENAMETOOLONG))
 			}
 			prnt, name = node, c
-
-			node = rchild(node, name)
+			node = node.chlds[c]
 			if nil != ancestor && node == ancestor {
 				name = "" // special case loop condition
 				return
