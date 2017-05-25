@@ -6,7 +6,8 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-type nodeData struct {
+//Data is the persisting part of a node
+type Data struct {
 	Stat fuse.Stat_t
 	Xatr map[string][]byte
 	Link []byte
@@ -15,7 +16,7 @@ type nodeData struct {
 
 //Node represents a filesystem node
 type Node struct {
-	nodeData
+	Data
 	opencnt int
 	handle  *os.File
 	chlds   map[string]*Node
@@ -24,7 +25,7 @@ type Node struct {
 func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node {
 	tmsp := fuse.Now()
 	node := Node{
-		nodeData{
+		Data{
 			fuse.Stat_t{
 				Dev:      dev,
 				Ino:      ino,
@@ -50,30 +51,30 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node 
 
 func (node *Node) initMaps() {
 	if node.IsDir() {
-		node.Chld = map[string]uint64{}
+		node.Data.Chld = map[string]uint64{}
 		node.chlds = map[string]*Node{}
 	}
 }
 
 //IsDir return if the node is a dir, this doesn't chnage over the lifecycle
 func (node *Node) IsDir() bool {
-	return fuse.S_IFDIR == node.Stat.Mode&fuse.S_IFMT
+	return fuse.S_IFDIR == node.Data.Stat.Mode&fuse.S_IFMT
 }
 
 //Ino returns the nodes identity, this doesn't change over the lifecycle
 func (node *Node) Ino() uint64 {
-	return node.Stat.Ino
+	return node.Data.Stat.Ino
 }
 
 //PutChild sets a child node by name
 func (node *Node) PutChild(name string, n *Node) {
-	node.Chld[name] = n.Stat.Ino
+	node.Data.Chld[name] = n.Data.Stat.Ino
 	node.chlds[name] = n
 }
 
 //DelChild deletes a child node by name
 func (node *Node) DelChild(name string) {
-	delete(node.Chld, name)
+	delete(node.Data.Chld, name)
 	delete(node.chlds, name)
 }
 

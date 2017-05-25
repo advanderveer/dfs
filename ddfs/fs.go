@@ -18,10 +18,7 @@ const (
 //FS is an in-memory store
 type FS struct {
 	fuse.FileSystemBase
-	lock sync.Mutex
-	// ino  uint64
-	// root    *Node
-	// openmap map[uint64]*Node
+	lock  sync.Mutex
 	errs  chan error
 	dbdir string
 	nodes *nodes.Store
@@ -31,10 +28,7 @@ type FS struct {
 func NewFS(dbdir string, errw io.Writer) (fs *FS, err error) {
 	fs = &FS{}
 	defer fs.synchronize()()
-	// fs.ino++
 	fs.dbdir = dbdir
-	// fs.root = newNode(0, fs.ino, fuse.S_IFDIR|00777, 0, 0)
-	// fs.openmap = map[uint64]*Node{}
 	fs.errs = make(chan error, 10)
 	go func() {
 		for err := range fs.errs {
@@ -101,6 +95,8 @@ func (fs *FS) Link(oldpath string, newpath string) (errc int) {
 		oldnode.Stat.Ctim = tmsp
 		newprnt.Stat.Ctim = tmsp
 		newprnt.Stat.Mtim = tmsp
+
+		tx.Save(oldnode, newprnt)
 		return 0
 	})
 }
@@ -161,6 +157,8 @@ func (fs *FS) Rename(oldpath string, newpath string) (errc int) {
 
 		oldprnt.DelChild(oldname)
 		newprnt.PutChild(newname, oldnode)
+
+		tx.Save(oldprnt, newprnt)
 		return 0
 	})
 }
@@ -176,6 +174,8 @@ func (fs *FS) Chmod(path string, mode uint32) (errc int) {
 		}
 		node.Stat.Mode = (node.Stat.Mode & fuse.S_IFMT) | mode&07777
 		node.Stat.Ctim = fuse.Now()
+
+		tx.Save(node)
 		return 0
 	})
 }
@@ -196,6 +196,8 @@ func (fs *FS) Chown(path string, uid uint32, gid uint32) (errc int) {
 			node.Stat.Gid = gid
 		}
 		node.Stat.Ctim = fuse.Now()
+
+		tx.Save(node)
 		return 0
 	})
 }
@@ -216,6 +218,8 @@ func (fs *FS) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 		}
 		node.Stat.Atim = tmsp[0]
 		node.Stat.Mtim = tmsp[1]
+
+		tx.Save(node)
 		return 0
 	})
 }
@@ -267,6 +271,8 @@ func (fs *FS) Truncate(path string, size int64, fh uint64) (errc int) {
 		tmsp := fuse.Now()
 		node.Stat.Ctim = tmsp
 		node.Stat.Mtim = tmsp
+
+		tx.Save(node)
 		return 0
 	})
 }
@@ -296,6 +302,8 @@ func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 		}
 
 		node.Stat.Atim = fuse.Now()
+
+		tx.Save(node)
 		return n
 	})
 }
@@ -324,6 +332,8 @@ func (fs *FS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 		tmsp := fuse.Now()
 		node.Stat.Ctim = tmsp
 		node.Stat.Mtim = tmsp
+
+		tx.Save(node)
 		return n
 	})
 }
@@ -349,12 +359,12 @@ func (fs *FS) Readdir(path string,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx nodes.Tx) int {
+	return fs.nodes.View(func(tx nodes.Tx) int {
 		node := fs.nodes.Get(tx, path, fh)
 		fill(".", &node.Stat, 0)
 		fill("..", nil, 0)
 
-		fs.nodes.Iterate(node, func(name string, chld *nodes.Node) bool {
+		tx.Iterate(node, func(name string, chld *nodes.Node) bool {
 			if !fill(name, &chld.Stat, 0) {
 				return false
 			}
@@ -393,12 +403,15 @@ func (fs *FS) Setxattr(path string, name string, value []byte, flags int) (errc 
 				return -fuse.ENOATTR
 			}
 		}
+
 		xatr := make([]byte, len(value))
 		copy(xatr, value)
 		if nil == node.Xatr {
 			node.Xatr = map[string][]byte{}
 		}
 		node.Xatr[name] = xatr
+
+		tx.Save(node)
 		return 0
 	})
 }
@@ -443,6 +456,8 @@ func (fs *FS) Removexattr(path string, name string) (errc int) {
 			return -fuse.ENOATTR
 		}
 		delete(node.Xatr, name)
+
+		tx.Save(node)
 		return 0
 	})
 }

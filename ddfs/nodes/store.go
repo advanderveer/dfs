@@ -157,24 +157,52 @@ func NewStore(dbdir string, errs chan<- error) (store *Store, err error) {
 // }
 
 //Iterate over children of a node
-func (s *Store) Iterate(node *Node, next func(name string, chld *Node) bool) {
-	for name := range node.Chld {
-		child := node.chlds[name]
-		ok := next(name, child)
-		if !ok {
-			break
-		}
-	}
-}
+// func (s *Store) Iterate(node *Node, next func(name string, chld *Node) bool) {
+// 	for name := range node.Chld {
+// 		child := node.chlds[name]
+// 		ok := next(name, child)
+// 		if !ok {
+// 			break
+// 		}
+// 	}
+// }
 
 //View will start an read-only transaction
-func (s *Store) View(fn func(tx Tx) int) int {
-	return fn(&TxR{root: s.root})
+func (s *Store) View(fn func(tx Tx) int) (errc int) {
+	if err := s.db.View(func(btx *bolt.Tx) error {
+		errc = fn(&TxR{
+			root:   s.root,
+			bucket: btx.Bucket([]byte("nodes")),
+		})
+		return nil //@TODO test if we want fuse errors to rollback the tx?
+	}); err != nil {
+		s.errs <- fmt.Errorf("view tx failed: %v", err)
+		return -fuse.EIO
+	}
+
+	return errc
 }
 
 //Update will start an writeable transaction
-func (s *Store) Update(fn func(tx Tx) int) int {
-	return fn(&TxRW{TxR: TxR{root: s.root}})
+func (s *Store) Update(fn func(tx Tx) int) (errc int) {
+	if err := s.db.Update(func(btx *bolt.Tx) error {
+		tx := &TxRW{TxR: TxR{
+			root:   s.root,
+			bucket: btx.Bucket([]byte("nodes")),
+		}}
+
+		errc = fn(tx)
+
+		//@TODO serialize and save
+		fmt.Println(tx.saves)
+
+		return nil //@TODO test if we want fuse errors to rollback the tx?
+	}); err != nil {
+		s.errs <- fmt.Errorf("update tx failed: %v", err)
+		return -fuse.EIO
+	}
+
+	return errc
 }
 
 //Make will create a node
@@ -187,6 +215,7 @@ func (s *Store) Make(path string, mode uint32, dev uint64, link []byte) int {
 		if nil != node {
 			return -fuse.EEXIST
 		}
+
 		s.ino++
 		uid, gid, _ := fuse.Getcontext()
 		node = newNode(dev, s.ino, mode, uid, gid)
@@ -198,6 +227,8 @@ func (s *Store) Make(path string, mode uint32, dev uint64, link []byte) int {
 		prnt.PutChild(name, node)
 		prnt.Stat.Ctim = node.Stat.Ctim
 		prnt.Stat.Mtim = node.Stat.Ctim
+
+		tx.Save(prnt, node)
 		return 0
 	})
 }
@@ -216,13 +247,7 @@ func (s *Store) Remove(path string, dir bool) int {
 			return -fuse.ENOTDIR
 		}
 
-		count := 0
-		s.Iterate(node, func(name string, chld *Node) bool {
-			count++
-			return true
-		})
-
-		if 0 < count {
+		if 0 < len(node.chlds) {
 			return -fuse.ENOTEMPTY
 		}
 
@@ -232,6 +257,8 @@ func (s *Store) Remove(path string, dir bool) int {
 		node.Stat.Ctim = tmsp
 		prnt.Stat.Ctim = tmsp
 		prnt.Stat.Mtim = tmsp
+
+		tx.Save(node, prnt)
 		return 0
 	})
 }
