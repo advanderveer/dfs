@@ -93,7 +93,7 @@ func (fs *FS) Link(oldpath string, newpath string) (errc int) {
 	oldnode.stat.Ctim = tmsp
 	newprnt.stat.Ctim = tmsp
 	newprnt.stat.Mtim = tmsp
-	return 0
+	return fs.writeNodePair(oldnode, newprnt)
 }
 
 // Symlink creates a symbolic link.
@@ -146,7 +146,7 @@ func (fs *FS) Rename(oldpath string, newpath string) (errc int) {
 
 	oldprnt.DelChild(oldname)
 	newprnt.PutChild(newname, oldnode)
-	return 0
+	return fs.writeNodePair(oldprnt, newprnt)
 }
 
 // Chmod changes the permission bits of a file.
@@ -159,7 +159,7 @@ func (fs *FS) Chmod(path string, mode uint32) (errc int) {
 	}
 	node.stat.Mode = (node.stat.Mode & fuse.S_IFMT) | mode&07777
 	node.stat.Ctim = fuse.Now()
-	return 0
+	return fs.writeNode(node)
 }
 
 // Chown changes the owner and group of a file.
@@ -177,7 +177,7 @@ func (fs *FS) Chown(path string, uid uint32, gid uint32) (errc int) {
 		node.stat.Gid = gid
 	}
 	node.stat.Ctim = fuse.Now()
-	return 0
+	return fs.writeNode(node)
 }
 
 // Utimens changes the access and modification times of a file.
@@ -195,7 +195,7 @@ func (fs *FS) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 	}
 	node.stat.Atim = tmsp[0]
 	node.stat.Mtim = tmsp[1]
-	return 0
+	return fs.writeNode(node)
 }
 
 // Open opens a file.
@@ -242,7 +242,7 @@ func (fs *FS) Truncate(path string, size int64, fh uint64) (errc int) {
 	tmsp := fuse.Now()
 	node.stat.Ctim = tmsp
 	node.stat.Mtim = tmsp
-	return 0
+	return fs.writeNode(node)
 }
 
 // Read reads data from a file.
@@ -269,7 +269,11 @@ func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	}
 
 	node.stat.Atim = fuse.Now()
-	return
+	if werrc := fs.writeNode(node); werrc != 0 {
+		return werrc
+	}
+
+	return n
 }
 
 // Write writes data to a file.
@@ -295,6 +299,10 @@ func (fs *FS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	tmsp := fuse.Now()
 	node.stat.Ctim = tmsp
 	node.stat.Mtim = tmsp
+	if werrc := fs.writeNode(node); werrc != 0 {
+		return werrc
+	}
+
 	return
 }
 
@@ -366,7 +374,7 @@ func (fs *FS) Setxattr(path string, name string, value []byte, flags int) (errc 
 		node.xatr = map[string][]byte{}
 	}
 	node.xatr[name] = xatr
-	return 0
+	return fs.writeNode(node)
 }
 
 // Getxattr gets extended attributes.
@@ -402,7 +410,7 @@ func (fs *FS) Removexattr(path string, name string) (errc int) {
 		return -fuse.ENOATTR
 	}
 	delete(node.xatr, name)
-	return 0
+	return fs.writeNode(node)
 }
 
 // Listxattr lists extended attributes.

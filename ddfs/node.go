@@ -8,7 +8,7 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-var store = map[uint64]*Node{}
+var nodes = map[uint64]*Node{}
 
 //NodeData is the persisting part of a Node
 type NodeData struct {
@@ -54,20 +54,15 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node 
 	return &fs
 }
 
-//Update starts a writable transaction on the node
-func (node *Node) Update(fn func(n *NodeData) int) (errc int) {
-	return fn(&node.NodeData)
-}
-
-//Read starts a readable transaction on the node
-func (node *Node) Read(fn func(n NodeData) int) (errc int) {
-	return fn(node.NodeData)
+//Ino returns the nodes identity
+func (node *Node) Ino() uint64 {
+	return node.stat.Ino
 }
 
 //EachChild calls next for each child, if it returns false it will stop
-func (node *NodeData) EachChild(next func(name string, n *Node) bool) {
+func (node *Node) EachChild(next func(name string, n *Node) bool) {
 	for name, ino := range node.chld {
-		node, _ := store[ino]
+		node, _ := nodes[ino]
 		ok := next(name, node)
 		if !ok {
 			break
@@ -76,27 +71,31 @@ func (node *NodeData) EachChild(next func(name string, n *Node) bool) {
 }
 
 //GetChild gets a child node by name or returns nil if it doesn't exist
-func (node *NodeData) GetChild(name string) (n *Node) {
+func (node *Node) GetChild(name string) (n *Node) {
 	ino, ok := node.chld[name]
 	if ok {
-		n, _ = store[ino]
+		n, ok = nodes[ino]
+		if ok {
+			n.NodeData, _ = store[ino] //@TODO load from database
+			//@TODO what if not OK(?)
+		}
 	}
 
 	return
 }
 
 //PutChild sets a child node by name
-func (node *NodeData) PutChild(name string, n *Node) {
+func (node *Node) PutChild(name string, n *Node) {
 	node.chld[name] = n.stat.Ino
-	store[n.stat.Ino] = n
+	nodes[n.stat.Ino] = n
 }
 
 //DelChild deletes a child node by name
-func (node *NodeData) DelChild(name string) {
+func (node *Node) DelChild(name string) {
 	ino, ok := node.chld[name]
 	if ok {
 		delete(node.chld, name)
-		delete(store, ino)
+		delete(nodes, ino)
 	}
 }
 
@@ -113,6 +112,17 @@ func (node *Node) WriteAt(b []byte, off int64) (n int, err error) {
 //Truncate implements: https://godoc.org/os#File.Truncate
 func (node *Node) Truncate(size int64) error {
 	return node.handle.Truncate(size)
+}
+
+func (fs *FS) writeNodePair(nodeA *Node, nodeB *Node) int {
+	store[nodeA.Ino()] = nodeA.NodeData
+	store[nodeB.Ino()] = nodeB.NodeData
+	return 0
+}
+
+func (fs *FS) writeNode(node *Node) int {
+	store[node.Ino()] = node.NodeData
+	return 0
 }
 
 func (fs *FS) lookupNode(path string, ancestor *Node) (prnt *Node, name string, node *Node) {
@@ -154,7 +164,7 @@ func (fs *FS) makeNode(path string, mode uint32, dev uint64, link []byte) int {
 	prnt.PutChild(name, node)
 	prnt.stat.Ctim = node.stat.Ctim
 	prnt.stat.Mtim = node.stat.Ctim
-	return 0
+	return fs.writeNodePair(node, prnt)
 }
 
 func (fs *FS) removeNode(path string, dir bool) int {
@@ -185,7 +195,7 @@ func (fs *FS) removeNode(path string, dir bool) int {
 	node.stat.Ctim = tmsp
 	prnt.stat.Ctim = tmsp
 	prnt.stat.Mtim = tmsp
-	return 0
+	return fs.writeNodePair(node, prnt)
 }
 
 func (fs *FS) openNode(path string, dir bool) (int, uint64) {
@@ -205,7 +215,7 @@ func (fs *FS) openNode(path string, dir bool) (int, uint64) {
 		//open a backed file
 		var err error
 		if node.handle, err = os.OpenFile(
-			filepath.Join(fs.dbdir, fmt.Sprintf("%d", node.stat.Ino)),
+			filepath.Join(fs.dbdir, fmt.Sprintf("%d", node.Ino())),
 			os.O_CREATE|os.O_RDWR,
 			0777, //@TODO what kind of do we want for backend file permissions?
 		); err != nil {
@@ -213,16 +223,16 @@ func (fs *FS) openNode(path string, dir bool) (int, uint64) {
 			return -fuse.EIO, ^uint64(0)
 		}
 
-		fs.openmap[node.stat.Ino] = node
+		fs.openmap[node.Ino()] = node
 	}
-	return 0, node.stat.Ino
+	return 0, node.Ino()
 }
 
 func (fs *FS) closeNode(fh uint64) int {
 	node := fs.openmap[fh]
 	node.opencnt--
 	if 0 == node.opencnt {
-		delete(fs.openmap, node.stat.Ino)
+		delete(fs.openmap, node.Ino())
 
 		if node.handle == nil {
 			fs.errs <- fmt.Errorf("node '%d' has no file handle upon closing", fh)
