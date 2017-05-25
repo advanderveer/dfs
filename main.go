@@ -16,12 +16,16 @@ func main() {
 
 	logs.Printf("mounting filesystem from '%s'", os.Args[1])
 	defer logs.Printf("unmounted, done!")
-	// fs, err := dfs.NewFS(os.Args[1])
-	// if err != nil {
-	// 	logs.Fatalf("failed to create filesystem: %v", err)
-	// }
 
-	fs := &ddfs.FS{}
+	err := os.MkdirAll(os.Args[1], 0777)
+	if err != nil {
+		logs.Fatalf("failed to create storage dir: %v", err)
+	}
+
+	fs, err := ddfs.NewFS(os.Args[1], os.Stderr)
+	if err != nil {
+		logs.Fatalf("failed to create filesystem: %v", err)
+	}
 
 	host := fuse.NewFileSystemHost(fs)
 	if !host.Mount("", os.Args[2:]) {

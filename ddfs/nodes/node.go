@@ -58,8 +58,13 @@ func (node *Node) Ino() uint64 {
 //EachChild calls next for each child, if it returns false it will stop
 func (node *Node) EachChild(next func(name string, n *Node) bool) {
 	for name, ino := range node.Chld {
-		node, _ := nodes[ino]
-		ok := next(name, node)
+		node, ok := nodes[ino]
+		if !ok {
+			//@TODO attemp to load it if it doesn't exist(?)
+			continue
+		}
+
+		ok = next(name, node)
 		if !ok {
 			break
 		}

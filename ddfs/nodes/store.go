@@ -1,11 +1,15 @@
 package nodes
 
 import (
+	"bytes"
+	"encoding/binary"
+	"encoding/gob"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/billziss-gh/cgofuse/fuse"
+	"github.com/boltdb/bolt"
 )
 
 var store = map[uint64]nodeData{}
@@ -17,6 +21,7 @@ type Store struct {
 	openmap map[uint64]*Node
 	errs    chan<- error
 	dbdir   string
+	db      *bolt.DB
 }
 
 //NewStore sets up a new store
@@ -27,28 +32,133 @@ func NewStore(dbdir string, errs chan<- error) (store *Store, err error) {
 		openmap: map[uint64]*Node{},
 	}
 
+	store.db, err = bolt.Open(filepath.Join(dbdir, "meta.db"), 0777, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	store.ino++
 	store.root = newNode(0, store.ino, fuse.S_IFDIR|00777, 0, 0)
+	if err = store.db.Update(func(tx *bolt.Tx) error {
+		_, txerr := tx.CreateBucketIfNotExists([]byte("nodes"))
+		if txerr != nil {
+			return txerr
+		}
+
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("failed to setup nodes bucket: %v", err)
+	}
+
+	store.Read(store.ino, store.root)
+	if errc := store.Write(store.root); errc != 0 {
+		return nil, fmt.Errorf("failed to write root: %v", err)
+	}
+
 	return store, nil
 }
 
 //WritePair persist one ore none of the provided nodes
 func (s *Store) WritePair(nodeA *Node, nodeB *Node) int {
-	store[nodeA.Ino()] = nodeA.nodeData
-	store[nodeB.Ino()] = nodeB.nodeData
+	if err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("nodes"))
+
+		//A
+		buf := bytes.NewBuffer(nil)
+		enc := gob.NewEncoder(buf)
+		err := enc.Encode(nodeA.nodeData)
+		if err != nil {
+			return err
+		}
+
+		key := make([]byte, 8)
+		binary.BigEndian.PutUint64(key, nodeA.Ino())
+
+		err = b.Put(key, buf.Bytes())
+		if err != nil {
+			return err
+		}
+
+		//A
+		buf = bytes.NewBuffer(nil)
+		enc = gob.NewEncoder(buf)
+		err = enc.Encode(nodeA.nodeData)
+		if err != nil {
+			return err
+		}
+
+		key = make([]byte, 8)
+		binary.BigEndian.PutUint64(key, nodeA.Ino())
+		return b.Put(key, buf.Bytes())
+
+		//@TODO serialize, put
+		// store[nodeA.Ino()] = nodeA.nodeData
+		// store[nodeB.Ino()] = nodeB.nodeData
+		// return nil
+	}); err != nil {
+		s.errs <- fmt.Errorf("failed to write node pair: %v", err)
+		return -fuse.EIO
+	}
+
 	return 0
 }
 
 //Write persists a single node
 func (s *Store) Write(node *Node) int {
-	store[node.Ino()] = node.nodeData
+	if err := s.db.Update(func(tx *bolt.Tx) error {
+		buf := bytes.NewBuffer(nil)
+		enc := gob.NewEncoder(buf)
+		err := enc.Encode(node.nodeData)
+		if err != nil {
+			return err
+		}
+
+		key := make([]byte, 8)
+		binary.BigEndian.PutUint64(key, node.Ino())
+
+		// defer fmt.Printf("wrote '%d', children: %#v \n", node.Ino(), node.Chld)
+
+		b := tx.Bucket([]byte("nodes"))
+		return b.Put(key, buf.Bytes())
+
+		// store[node.Ino()] = node.nodeData
+		// return nil
+	}); err != nil {
+		s.errs <- fmt.Errorf("failed to write node: %v", err)
+		return -fuse.EIO
+	}
+
 	return 0
 }
 
 //Read updates node with persisted data
 func (s *Store) Read(ino uint64, node *Node) {
-	node.nodeData, _ = store[ino]
-	//@TODO what if not OK(?)
+	if err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("nodes"))
+
+		key := make([]byte, 8)
+		binary.BigEndian.PutUint64(key, ino)
+
+		data := b.Get(key)
+		if data == nil {
+			return fmt.Errorf("couldn find node '%d'", ino)
+		}
+
+		buf := bytes.NewBuffer(data)
+		dec := gob.NewDecoder(buf)
+		err := dec.Decode(&node.nodeData)
+		if err != nil {
+			return err
+		}
+
+		// defer fmt.Printf("read '%d', children: %#v \n", node.Ino(), node.Chld)
+
+		//get, deserialize
+		// node.nodeData, _ = store[ino]
+		return nil
+	}); err != nil {
+		s.errs <- fmt.Errorf("failed to read node: %v", err)
+	}
 }
 
 //Lookup fetches a node by path
