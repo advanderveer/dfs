@@ -32,140 +32,39 @@ func NewStore(dbdir string, errs chan<- error) (store *Store, err error) {
 		return nil, err
 	}
 
-	store.ino++
-	store.root = newNode(0, store.ino, fuse.S_IFDIR|00777, 0, 0)
 	if err = store.db.Update(func(tx *bolt.Tx) error {
-		_, txerr := tx.CreateBucketIfNotExists([]byte("nodes"))
-		if txerr != nil {
-			return txerr
+		b, terr := tx.CreateBucketIfNotExists([]byte("nodes"))
+		if terr != nil {
+			return terr
 		}
+
+		store.root, terr = loadNode(b, 1)
+		if terr != nil {
+			if terr != errNodeNotExist {
+				return terr
+			}
+
+			store.root = newNode(0, 1, fuse.S_IFDIR|00777, 0, 0)
+			if terr = saveNode(b, store.root); terr != nil {
+				return terr
+			}
+		}
+
+		fmt.Println("-----------NODES:---------------")
+		b.ForEach(func(k, v []byte) error {
+			store.ino++
+			fmt.Printf("key=%x \t value=%s\n", k, v)
+			return nil
+		})
+		fmt.Println("--------------------------------", store.ino)
 
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("failed to setup nodes bucket: %v", err)
 	}
 
-	// if errc := store.Read(store.ino, store.root); errc != 0 {
-	// 	if errc != -fuse.ENOENT {
-	// 		return nil, fmt.Errorf("failed to read root: %v", errc)
-	// 	}
-	//
-	// 	if errc := store.Write(store.root); errc != 0 {
-	// 		return nil, fmt.Errorf("failed to write root: %v", errc)
-	// 	}
-	// }
-
 	return store, nil
 }
-
-//WritePair persist one ore none of the provided nodes
-// func (s *Store) WritePair(nodeA *Node, nodeB *Node) int {
-// 	if err := s.db.Update(func(tx *bolt.Tx) error {
-// 		b := tx.Bucket([]byte("nodes"))
-//
-// 		//A
-// 		buf := bytes.NewBuffer(nil)
-// 		enc := gob.NewEncoder(buf)
-// 		err := enc.Encode(nodeA.nodeData)
-// 		if err != nil {
-// 			return err
-// 		}
-//
-// 		key := make([]byte, 8)
-// 		binary.BigEndian.PutUint64(key, nodeA.Ino())
-//
-// 		err = b.Put(key, buf.Bytes())
-// 		if err != nil {
-// 			return err
-// 		}
-//
-// 		//B
-// 		buf = bytes.NewBuffer(nil)
-// 		enc = gob.NewEncoder(buf)
-// 		err = enc.Encode(nodeA.nodeData)
-// 		if err != nil {
-// 			return err
-// 		}
-//
-// 		key = make([]byte, 8)
-// 		binary.BigEndian.PutUint64(key, nodeA.Ino())
-// 		return b.Put(key, buf.Bytes())
-// 	}); err != nil {
-// 		s.errs <- fmt.Errorf("failed to put pair of nodes: %v", err)
-// 		return -fuse.EIO
-// 	}
-//
-// 	return 0
-// }
-
-//Write persists a single node
-// func (s *Store) Write(node *Node) int {
-// 	if err := s.db.Update(func(tx *bolt.Tx) error {
-// 		buf := bytes.NewBuffer(nil)
-// 		enc := gob.NewEncoder(buf)
-// 		err := enc.Encode(node.nodeData)
-// 		if err != nil {
-// 			return err
-// 		}
-//
-// 		key := make([]byte, 8)
-// 		binary.BigEndian.PutUint64(key, node.Ino())
-//
-// 		b := tx.Bucket([]byte("nodes"))
-// 		return b.Put(key, buf.Bytes())
-// 	}); err != nil {
-// 		s.errs <- fmt.Errorf("failed to write node: %v", err)
-// 		return -fuse.EIO
-// 	}
-//
-// 	return 0
-// }
-
-//Read updates node with persisted data
-// func (s *Store) Read(ino uint64, node *Node) int {
-// 	ErrNodeNotExist := fmt.Errorf("no such node")
-//
-// 	if err := s.db.View(func(tx *bolt.Tx) error {
-// 		b := tx.Bucket([]byte("nodes"))
-//
-// 		key := make([]byte, 8)
-// 		binary.BigEndian.PutUint64(key, ino)
-//
-// 		data := b.Get(key)
-// 		if data == nil {
-// 			return ErrNodeNotExist
-// 		}
-//
-// 		buf := bytes.NewBuffer(data)
-// 		dec := gob.NewDecoder(buf)
-// 		err := dec.Decode(&node.nodeData)
-// 		if err != nil {
-// 			return err
-// 		}
-//
-// 		return nil
-// 	}); err != nil {
-// 		if err == ErrNodeNotExist {
-// 			return -fuse.ENOENT
-// 		}
-//
-// 		s.errs <- fmt.Errorf("failed to read node: %v", err)
-// 		return -fuse.EIO
-// 	}
-//
-// 	return 0
-// }
-
-//Iterate over children of a node
-// func (s *Store) Iterate(node *Node, next func(name string, chld *Node) bool) {
-// 	for name := range node.Chld {
-// 		child := node.chlds[name]
-// 		ok := next(name, child)
-// 		if !ok {
-// 			break
-// 		}
-// 	}
-// }
 
 //View will start an read-only transaction
 func (s *Store) View(fn func(tx Tx) int) (errc int) {
@@ -192,9 +91,12 @@ func (s *Store) Update(fn func(tx Tx) int) (errc int) {
 		}}
 
 		errc = fn(tx)
-
-		//@TODO serialize and save
-		fmt.Println(tx.saves)
+		for _, node := range tx.saves {
+			err := saveNode(tx.bucket, node)
+			if err != nil {
+				return fmt.Errorf("failed to put node: '%d'", node.Ino())
+			}
+		}
 
 		return nil //@TODO test if we want fuse errors to rollback the tx?
 	}); err != nil {
