@@ -32,21 +32,21 @@ func NewStore(dbdir string, errs chan<- error) (store *Store, err error) {
 	return store, nil
 }
 
-//WriteNodePair persist one ore none of the provided nodes
-func (fs *Store) WriteNodePair(nodeA *Node, nodeB *Node) int {
+//WritePair persist one ore none of the provided nodes
+func (fs *Store) WritePair(nodeA *Node, nodeB *Node) int {
 	store[nodeA.Ino()] = nodeA.nodeData
 	store[nodeB.Ino()] = nodeB.nodeData
 	return 0
 }
 
-//WriteNode persists a single node
-func (fs *Store) WriteNode(node *Node) int {
+//Write persists a single node
+func (fs *Store) Write(node *Node) int {
 	store[node.Ino()] = node.nodeData
 	return 0
 }
 
-//LookupNode fetches a node by path
-func (fs *Store) LookupNode(path string, ancestor *Node) (prnt *Node, name string, node *Node) {
+//Lookup fetches a node by path
+func (fs *Store) Lookup(path string, ancestor *Node) (prnt *Node, name string, node *Node) {
 	prnt = fs.root
 	name = ""
 	node = fs.root
@@ -66,9 +66,9 @@ func (fs *Store) LookupNode(path string, ancestor *Node) (prnt *Node, name strin
 	return
 }
 
-//MakeNode will create a node
-func (fs *Store) MakeNode(path string, mode uint32, dev uint64, link []byte) int {
-	prnt, name, node := fs.LookupNode(path, nil)
+//Make will create a node
+func (fs *Store) Make(path string, mode uint32, dev uint64, link []byte) int {
+	prnt, name, node := fs.Lookup(path, nil)
 	if nil == prnt {
 		return -fuse.ENOENT
 	}
@@ -86,12 +86,12 @@ func (fs *Store) MakeNode(path string, mode uint32, dev uint64, link []byte) int
 	prnt.PutChild(name, node)
 	prnt.Stat.Ctim = node.Stat.Ctim
 	prnt.Stat.Mtim = node.Stat.Ctim
-	return fs.WriteNodePair(node, prnt)
+	return fs.WritePair(node, prnt)
 }
 
-//RemoveNode will remove a node
-func (fs *Store) RemoveNode(path string, dir bool) int {
-	prnt, name, node := fs.LookupNode(path, nil)
+//Remove will remove a node
+func (fs *Store) Remove(path string, dir bool) int {
+	prnt, name, node := fs.Lookup(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
@@ -118,12 +118,12 @@ func (fs *Store) RemoveNode(path string, dir bool) int {
 	node.Stat.Ctim = tmsp
 	prnt.Stat.Ctim = tmsp
 	prnt.Stat.Mtim = tmsp
-	return fs.WriteNodePair(node, prnt)
+	return fs.WritePair(node, prnt)
 }
 
-//OpenNode will setup a new node handle
-func (fs *Store) OpenNode(path string, dir bool) (int, uint64) {
-	_, _, node := fs.LookupNode(path, nil)
+//Open will setup a new node handle
+func (fs *Store) Open(path string, dir bool) (int, uint64) {
+	_, _, node := fs.Lookup(path, nil)
 	if nil == node {
 		return -fuse.ENOENT, ^uint64(0)
 	}
@@ -152,8 +152,8 @@ func (fs *Store) OpenNode(path string, dir bool) (int, uint64) {
 	return 0, node.Ino()
 }
 
-//CloseNode will close a node
-func (fs *Store) CloseNode(fh uint64) int {
+//Close will close a node
+func (fs *Store) Close(fh uint64) int {
 	node := fs.openmap[fh]
 	node.opencnt--
 	if 0 == node.opencnt {
@@ -174,10 +174,10 @@ func (fs *Store) CloseNode(fh uint64) int {
 	return 0
 }
 
-//GetNode will lookup or get an open node
-func (fs *Store) GetNode(path string, fh uint64) *Node {
+//Get will lookup or get an open node
+func (fs *Store) Get(path string, fh uint64) *Node {
 	if ^uint64(0) == fh {
-		_, _, node := fs.LookupNode(path, nil)
+		_, _, node := fs.Lookup(path, nil)
 		return node
 	}
 
