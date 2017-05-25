@@ -2,30 +2,23 @@ package nodes
 
 import "github.com/billziss-gh/cgofuse/fuse"
 
-//Tx is a read-only node transaction
-type Tx struct {
-	root    *Node
-	openmap map[uint64]*Node //@TODO move this out of the tx (to the fs)
+//Tx allows for atomic interaction with nodes
+type Tx interface {
+	Lookup(path string, ancestor *Node) (prnt *Node, name string, node *Node)
+}
+
+//TxR is a read-only node transaction
+type TxR struct {
+	root *Node
 }
 
 //TxRW is a read-only node transaction
 type TxRW struct {
-	Tx
+	TxR
 }
 
-//Get will lookup or get an open node
-//@TODO move this out of the tx, to the fs
-func (tx *Tx) Get(path string, fh uint64) *Node {
-	if ^uint64(0) == fh {
-		_, _, node := tx.Lookup(path, nil)
-		return node
-	}
-
-	return tx.openmap[fh]
-}
-
-//Lookup a node by its path
-func (tx *Tx) Lookup(path string, ancestor *Node) (prnt *Node, name string, node *Node) {
+//Lookup a node by its path, it walks the in-memory tree structure of inodes and loads persistent information from disk
+func (tx *TxR) Lookup(path string, ancestor *Node) (prnt *Node, name string, node *Node) {
 	prnt = tx.root
 	name = ""
 	node = tx.root

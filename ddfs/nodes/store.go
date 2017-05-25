@@ -168,18 +168,18 @@ func (s *Store) Iterate(node *Node, next func(name string, chld *Node) bool) {
 }
 
 //View will start an read-only transaction
-func (s *Store) View(fn func(tx *Tx) int) int {
-	return fn(&Tx{root: s.root, openmap: s.openmap})
+func (s *Store) View(fn func(tx Tx) int) int {
+	return fn(&TxR{root: s.root})
 }
 
 //Update will start an writeable transaction
-func (s *Store) Update(fn func(tx *TxRW) int) int {
-	return fn(&TxRW{Tx: Tx{root: s.root, openmap: s.openmap}})
+func (s *Store) Update(fn func(tx Tx) int) int {
+	return fn(&TxRW{TxR: TxR{root: s.root}})
 }
 
 //Make will create a node
 func (s *Store) Make(path string, mode uint32, dev uint64, link []byte) int {
-	return s.Update(func(tx *TxRW) int {
+	return s.Update(func(tx Tx) int {
 		prnt, name, node := tx.Lookup(path, nil)
 		if nil == prnt {
 			return -fuse.ENOENT
@@ -204,7 +204,7 @@ func (s *Store) Make(path string, mode uint32, dev uint64, link []byte) int {
 
 //Remove will remove a node
 func (s *Store) Remove(path string, dir bool) int {
-	return s.Update(func(tx *TxRW) int {
+	return s.Update(func(tx Tx) int {
 		prnt, name, node := tx.Lookup(path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -238,7 +238,7 @@ func (s *Store) Remove(path string, dir bool) int {
 
 //Open will setup a new node handle
 func (s *Store) Open(path string, dir bool) (errc int, fh uint64) {
-	errc = s.View(func(tx *Tx) int {
+	errc = s.View(func(tx Tx) int {
 		_, _, node := tx.Lookup(path, nil)
 		if nil == node {
 			fh = ^uint64(0)
@@ -298,4 +298,14 @@ func (s *Store) Close(fh uint64) int {
 	}
 
 	return 0
+}
+
+//Get will lookup or get an open node
+func (s *Store) Get(tx Tx, path string, fh uint64) *Node {
+	if ^uint64(0) == fh {
+		_, _, node := tx.Lookup(path, nil)
+		return node
+	}
+
+	return s.openmap[fh]
 }

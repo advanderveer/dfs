@@ -82,7 +82,7 @@ func (fs *FS) Rmdir(path string) (errc int) {
 func (fs *FS) Link(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
+	return fs.nodes.Update(func(tx nodes.Tx) int {
 		_, _, oldnode := tx.Lookup(oldpath, nil)
 		if nil == oldnode {
 			return -fuse.ENOENT
@@ -116,7 +116,7 @@ func (fs *FS) Symlink(target string, newpath string) (errc int) {
 func (fs *FS) Readlink(path string) (errc int, target string) {
 	defer trace(path)(&errc, &target)
 	defer fs.synchronize()()
-	errc = fs.nodes.View(func(tx *nodes.Tx) int {
+	errc = fs.nodes.View(func(tx nodes.Tx) int {
 		_, _, node := tx.Lookup(path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -136,7 +136,7 @@ func (fs *FS) Readlink(path string) (errc int, target string) {
 func (fs *FS) Rename(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
+	return fs.nodes.Update(func(tx nodes.Tx) int {
 		oldprnt, oldname, oldnode := tx.Lookup(oldpath, nil)
 		if nil == oldnode {
 			return -fuse.ENOENT
@@ -169,7 +169,7 @@ func (fs *FS) Rename(oldpath string, newpath string) (errc int) {
 func (fs *FS) Chmod(path string, mode uint32) (errc int) {
 	defer trace(path, mode)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
+	return fs.nodes.Update(func(tx nodes.Tx) int {
 		_, _, node := tx.Lookup(path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -184,7 +184,7 @@ func (fs *FS) Chmod(path string, mode uint32) (errc int) {
 func (fs *FS) Chown(path string, uid uint32, gid uint32) (errc int) {
 	defer trace(path, uid, gid)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
+	return fs.nodes.Update(func(tx nodes.Tx) int {
 		_, _, node := tx.Lookup(path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -204,7 +204,7 @@ func (fs *FS) Chown(path string, uid uint32, gid uint32) (errc int) {
 func (fs *FS) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
+	return fs.nodes.Update(func(tx nodes.Tx) int {
 		_, _, node := tx.Lookup(path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -231,8 +231,8 @@ func (fs *FS) Open(path string, flags int) (errc int, fh uint64) {
 func (fs *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc, stat)
 	defer fs.synchronize()()
-	return fs.nodes.View(func(tx *nodes.Tx) int {
-		node := tx.Get(path, fh)
+	return fs.nodes.View(func(tx nodes.Tx) int {
+		node := fs.nodes.Get(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
 		}
@@ -245,8 +245,8 @@ func (fs *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 func (fs *FS) Truncate(path string, size int64, fh uint64) (errc int) {
 	defer trace(path, size, fh)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
-		node := tx.Get(path, fh)
+	return fs.nodes.Update(func(tx nodes.Tx) int {
+		node := fs.nodes.Get(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
 		}
@@ -275,8 +275,8 @@ func (fs *FS) Truncate(path string, size int64, fh uint64) (errc int) {
 func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	defer trace(path, buff, ofst, fh)(&n)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
-		node := tx.Get(path, fh)
+	return fs.nodes.Update(func(tx nodes.Tx) int {
+		node := fs.nodes.Get(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
 		}
@@ -304,8 +304,8 @@ func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 func (fs *FS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	defer trace(path, buff, ofst, fh)(&n)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
-		node := tx.Get(path, fh)
+	return fs.nodes.Update(func(tx nodes.Tx) int {
+		node := fs.nodes.Get(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
 		}
@@ -349,8 +349,8 @@ func (fs *FS) Readdir(path string,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
-		node := tx.Get(path, fh)
+	return fs.nodes.Update(func(tx nodes.Tx) int {
+		node := fs.nodes.Get(tx, path, fh)
 		fill(".", &node.Stat, 0)
 		fill("..", nil, 0)
 
@@ -376,7 +376,7 @@ func (fs *FS) Releasedir(path string, fh uint64) (errc int) {
 func (fs *FS) Setxattr(path string, name string, value []byte, flags int) (errc int) {
 	defer trace(path, name, value, flags)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
+	return fs.nodes.Update(func(tx nodes.Tx) int {
 		_, _, node := tx.Lookup(path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -407,7 +407,7 @@ func (fs *FS) Setxattr(path string, name string, value []byte, flags int) (errc 
 func (fs *FS) Getxattr(path string, name string) (errc int, xatr []byte) {
 	defer trace(path, name)(&errc, &xatr)
 	defer fs.synchronize()()
-	errc = fs.nodes.View(func(tx *nodes.Tx) int {
+	errc = fs.nodes.View(func(tx nodes.Tx) int {
 		_, _, node := tx.Lookup(path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -431,7 +431,7 @@ func (fs *FS) Getxattr(path string, name string) (errc int, xatr []byte) {
 func (fs *FS) Removexattr(path string, name string) (errc int) {
 	defer trace(path, name)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.Update(func(tx *nodes.TxRW) int {
+	return fs.nodes.Update(func(tx nodes.Tx) int {
 		_, _, node := tx.Lookup(path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -451,7 +451,7 @@ func (fs *FS) Removexattr(path string, name string) (errc int) {
 func (fs *FS) Listxattr(path string, fill func(name string) bool) (errc int) {
 	defer trace(path, fill)(&errc)
 	defer fs.synchronize()()
-	return fs.nodes.View(func(tx *nodes.Tx) int {
+	return fs.nodes.View(func(tx nodes.Tx) int {
 		_, _, node := tx.Lookup(path, nil)
 		if nil == node {
 			return -fuse.ENOENT
