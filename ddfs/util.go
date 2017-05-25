@@ -2,7 +2,6 @@ package ddfs
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/billziss-gh/cgofuse/examples/shared"
 	"github.com/billziss-gh/cgofuse/fuse"
@@ -11,10 +10,6 @@ import (
 func trace(vals ...interface{}) func(vals ...interface{}) {
 	uid, gid, _ := fuse.Getcontext()
 	return shared.Trace(1, fmt.Sprintf("[uid=%v,gid=%v]", uid, gid), vals...)
-}
-
-func split(path string) []string {
-	return strings.Split(path, "/")
 }
 
 func resize(slice []byte, size int64, zeroinit bool) []byte {
