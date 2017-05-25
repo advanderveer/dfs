@@ -51,8 +51,13 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node 
 
 func (node *Node) initMaps() {
 	if node.IsDir() {
-		node.Data.Chld = map[string]uint64{}
-		node.chlds = map[string]*Node{}
+		if node.Data.Chld == nil {
+			node.Data.Chld = map[string]uint64{}
+		}
+
+		if node.chlds == nil {
+			node.chlds = map[string]*Node{}
+		}
 	}
 }
 

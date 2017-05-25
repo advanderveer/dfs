@@ -12,6 +12,15 @@ import (
 var errNodeNotExist = errors.New("node doesn't exist")
 
 func loadChildOrNil(b *bolt.Bucket, node *Node, name string) (child *Node) {
+	// fmt.Println("prnt:", node.Ino(), "name:", name)
+
+	ino, ok := node.Chld[name]
+	if !ok {
+		return nil
+	}
+
+	_ = ino
+
 	// ino, ok1 := node.Chld[name]
 	child = node.chlds[name]
 
