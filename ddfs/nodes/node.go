@@ -23,7 +23,7 @@ type Node struct {
 
 func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node {
 	tmsp := fuse.Now()
-	fs := Node{
+	node := Node{
 		nodeData{
 			fuse.Stat_t{
 				Dev:      dev,
@@ -44,26 +44,25 @@ func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node 
 		0,
 		nil,
 		nil}
-	if fuse.S_IFDIR == fs.Stat.Mode&fuse.S_IFMT {
-		fs.Chld = map[string]uint64{}
-		fs.chlds = map[string]*Node{}
-	}
-	return &fs
+	node.initMaps()
+	return &node
 }
 
-//Ino returns the nodes identity
+func (node *Node) initMaps() {
+	if node.IsDir() {
+		node.Chld = map[string]uint64{}
+		node.chlds = map[string]*Node{}
+	}
+}
+
+//IsDir return if the node is a dir, this doesn't chnage over the lifecycle
+func (node *Node) IsDir() bool {
+	return fuse.S_IFDIR == node.Stat.Mode&fuse.S_IFMT
+}
+
+//Ino returns the nodes identity, this doesn't change over the lifecycle
 func (node *Node) Ino() uint64 {
 	return node.Stat.Ino
-}
-
-//EachChild calls next for each child, if it returns false it will stop
-func (node *Node) EachChild(next func(name string, n *Node) bool) {
-	for name, child := range node.chlds {
-		ok := next(name, child)
-		if !ok {
-			break
-		}
-	}
 }
 
 //PutChild sets a child node by name
