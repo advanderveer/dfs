@@ -26,7 +26,11 @@ func (tx *TxR) Save(node ...*Node) {
 //Iterate walks direct children of a node
 func (tx *TxR) Iterate(node *Node, next func(name string, chld *Node) bool) {
 	for name := range node.Chld {
-		chld := loadChildOrNil(tx.bucket, node, name)
+		chld, err := loadChild(tx.bucket, node, name)
+		if err != nil {
+			//@TODO handle error
+		}
+
 		ok := next(name, chld)
 		if !ok {
 			break
@@ -46,8 +50,12 @@ func (tx *TxR) Lookup(path string, ancestor *Node) (prnt *Node, name string, nod
 			}
 
 			prnt, name = node, c
-			node = loadChildOrNil(tx.bucket, prnt, name)
-			//@TODO handle error
+
+			var err error
+			node, err = loadChild(tx.bucket, prnt, name)
+			if err != nil {
+				_ = err //@TODO handle error
+			}
 
 			if nil != ancestor && node == ancestor {
 				name = "" // special case loop condition

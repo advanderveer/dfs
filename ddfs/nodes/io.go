@@ -5,115 +5,63 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/boltdb/bolt"
 )
 
 var errNodeNotExist = errors.New("node doesn't exist")
 
-func loadChildOrNil(b *bolt.Bucket, node *Node, name string) (child *Node) {
-	// fmt.Println("prnt:", node.Ino(), "name:", name)
-
+func loadChild(b *bolt.Bucket, node *Node, name string) (child *Node, err error) {
 	ino, ok := node.Chld[name]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
-	_ = ino
+	child, ok = node.chlds[name]
+	if !ok {
+		child, err = loadNode(b, ino)
+		if err != nil {
+			fmt.Println("failed to load")
+			//@TODO handle errors
+			return nil, err
+		}
 
-	// ino, ok1 := node.Chld[name]
-	child = node.chlds[name]
+		node.chlds[name] = child
+	} else {
+		err = loadNodeData(b, child.Ino(), &child.Data)
+		if err != nil {
+			fmt.Println("failed to load data")
+			//@TODO handle errors
+			return nil, err
+		}
+	}
 
-	// fmt.Println(ino, ok1, ok2)
-
-	// ino, ok := node.Chld[name]
-	// if !ok {
-	// 	return nil
-	// }
-	//
-	// child = node.chlds[name]
-	// _ = ino
-	return
-
-	// ino, ok := node.Chld[name]
-	// if ok {
-	// 	child = node.chlds[name]
-	//
-	// 	if child == nil {
-	// 		fmt.Println("AAAAA")
-	// 	}
-	//
-	// 	// if child == nil {
-	// 	// 	child = &Node{}
-	// 	// 	err := loadIno(b, ino, &child.Data)
-	// 	// 	if err != nil {
-	// 	// 		fmt.Printf("failed to load ino '%d': %v\n", ino, err)
-	// 	// 		return nil
-	// 	// 	}
-	// 	// 	child.initMaps()
-	// 	// }
-	//
-	// 	_ = ino
-	// 	//@TODO if nil, load from disk using ino
-	// }
-	//
-	// return child
+	return child, nil
 }
 
-// func loadIno(b *bolt.Bucket, ino uint64, ndata *Data) (err error) {
-// 	key := make([]byte, 8)
-// 	binary.BigEndian.PutUint64(key, ino)
-//
-// 	data := b.Get(key)
-// 	if data == nil {
-// 		return errNodeNotExist
-// 	}
-//
-// 	buf := bytes.NewBuffer(data)
-// 	dec := json.NewDecoder(buf)
-// 	err = dec.Decode(ndata)
-// 	if err != nil {
-// 		return err
-// 	}
-//
-// 	return nil
-// }
-
-// func loadNode(b *bolt.Bucket, node *Node) error {
-//
-// 	loadIno(b, node.Ino(), &node.Data)
-//
-// 	// key := make([]byte, 8)
-// 	// binary.BigEndian.PutUint64(key, node.Ino())
-// 	//
-// 	// data := b.Get(key)
-// 	// if data == nil {
-// 	// 	return errNodeNotExist
-// 	// }
-// 	//
-// 	// buf := bytes.NewBuffer(data)
-// 	// dec := json.NewDecoder(buf)
-// 	// err := dec.Decode(&node.Data)
-// 	// if err != nil {
-// 	// 	return err
-// 	// }
-//
-// 	return nil
-// }
-
-func loadNode(b *bolt.Bucket, ino uint64) (node *Node, err error) {
+func loadNodeData(b *bolt.Bucket, ino uint64, ndata *Data) (err error) {
 	key := make([]byte, 8)
 	binary.BigEndian.PutUint64(key, ino)
 
 	data := b.Get(key)
 	if data == nil {
-		return nil, errNodeNotExist
+		return errNodeNotExist
 	}
 
-	node = &Node{}
 	buf := bytes.NewBuffer(data)
 	dec := json.NewDecoder(buf)
-	err = dec.Decode(&node.Data)
+	err = dec.Decode(ndata)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func loadNode(b *bolt.Bucket, ino uint64) (node *Node, err error) {
+	node = &Node{}
+	err = loadNodeData(b, ino, &node.Data)
 	if err != nil {
 		return nil, err
 	}
