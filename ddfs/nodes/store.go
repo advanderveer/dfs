@@ -33,30 +33,48 @@ func NewStore(dbdir string, errs chan<- error) (store *Store, err error) {
 }
 
 //WritePair persist one ore none of the provided nodes
-func (fs *Store) WritePair(nodeA *Node, nodeB *Node) int {
+func (s *Store) WritePair(nodeA *Node, nodeB *Node) int {
 	store[nodeA.Ino()] = nodeA.nodeData
 	store[nodeB.Ino()] = nodeB.nodeData
 	return 0
 }
 
 //Write persists a single node
-func (fs *Store) Write(node *Node) int {
+func (s *Store) Write(node *Node) int {
 	store[node.Ino()] = node.nodeData
 	return 0
 }
 
+//Read updates node with persisted data
+func (s *Store) Read(ino uint64, node *Node) {
+	node.nodeData, _ = store[ino]
+	//@TODO what if not OK(?)
+}
+
 //Lookup fetches a node by path
-func (fs *Store) Lookup(path string, ancestor *Node) (prnt *Node, name string, node *Node) {
-	prnt = fs.root
+func (s *Store) Lookup(path string, ancestor *Node) (prnt *Node, name string, node *Node) {
+	rchild := func(node *Node, name string) (n *Node) {
+		ino, ok := node.Chld[name]
+		if ok {
+			n, ok = nodes[ino]
+			if ok {
+				s.Read(ino, n)
+			}
+		}
+		return n
+	}
+
+	prnt = s.root
 	name = ""
-	node = fs.root
+	node = s.root
 	for _, c := range split(path) {
 		if "" != c {
 			if 255 < len(c) {
 				panic(fuse.Error(-fuse.ENAMETOOLONG))
 			}
 			prnt, name = node, c
-			node = node.GetChild(c)
+
+			node = rchild(node, name)
 			if nil != ancestor && node == ancestor {
 				name = "" // special case loop condition
 				return
@@ -67,17 +85,17 @@ func (fs *Store) Lookup(path string, ancestor *Node) (prnt *Node, name string, n
 }
 
 //Make will create a node
-func (fs *Store) Make(path string, mode uint32, dev uint64, link []byte) int {
-	prnt, name, node := fs.Lookup(path, nil)
+func (s *Store) Make(path string, mode uint32, dev uint64, link []byte) int {
+	prnt, name, node := s.Lookup(path, nil)
 	if nil == prnt {
 		return -fuse.ENOENT
 	}
 	if nil != node {
 		return -fuse.EEXIST
 	}
-	fs.ino++
+	s.ino++
 	uid, gid, _ := fuse.Getcontext()
-	node = newNode(dev, fs.ino, mode, uid, gid)
+	node = newNode(dev, s.ino, mode, uid, gid)
 	if nil != link {
 		node.Link = make([]byte, len(link))
 		node.Stat.Size = int64(len(link))
@@ -86,12 +104,12 @@ func (fs *Store) Make(path string, mode uint32, dev uint64, link []byte) int {
 	prnt.PutChild(name, node)
 	prnt.Stat.Ctim = node.Stat.Ctim
 	prnt.Stat.Mtim = node.Stat.Ctim
-	return fs.WritePair(node, prnt)
+	return s.WritePair(node, prnt)
 }
 
 //Remove will remove a node
-func (fs *Store) Remove(path string, dir bool) int {
-	prnt, name, node := fs.Lookup(path, nil)
+func (s *Store) Remove(path string, dir bool) int {
+	prnt, name, node := s.Lookup(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
@@ -118,12 +136,12 @@ func (fs *Store) Remove(path string, dir bool) int {
 	node.Stat.Ctim = tmsp
 	prnt.Stat.Ctim = tmsp
 	prnt.Stat.Mtim = tmsp
-	return fs.WritePair(node, prnt)
+	return s.WritePair(node, prnt)
 }
 
 //Open will setup a new node handle
-func (fs *Store) Open(path string, dir bool) (int, uint64) {
-	_, _, node := fs.Lookup(path, nil)
+func (s *Store) Open(path string, dir bool) (int, uint64) {
+	_, _, node := s.Lookup(path, nil)
 	if nil == node {
 		return -fuse.ENOENT, ^uint64(0)
 	}
@@ -139,33 +157,33 @@ func (fs *Store) Open(path string, dir bool) (int, uint64) {
 		//open a backed file
 		var err error
 		if node.handle, err = os.OpenFile(
-			filepath.Join(fs.dbdir, fmt.Sprintf("%d", node.Ino())),
+			filepath.Join(s.dbdir, fmt.Sprintf("%d", node.Ino())),
 			os.O_CREATE|os.O_RDWR,
 			0777, //@TODO what kind of do we want for backend file permissions?
 		); err != nil {
-			fs.errs <- err
+			s.errs <- err
 			return -fuse.EIO, ^uint64(0)
 		}
 
-		fs.openmap[node.Ino()] = node
+		s.openmap[node.Ino()] = node
 	}
 	return 0, node.Ino()
 }
 
 //Close will close a node
-func (fs *Store) Close(fh uint64) int {
-	node := fs.openmap[fh]
+func (s *Store) Close(fh uint64) int {
+	node := s.openmap[fh]
 	node.opencnt--
 	if 0 == node.opencnt {
-		delete(fs.openmap, node.Ino())
+		delete(s.openmap, node.Ino())
 
 		if node.handle == nil {
-			fs.errs <- fmt.Errorf("node '%d' has no file handle upon closing", fh)
+			s.errs <- fmt.Errorf("node '%d' has no file handle upon closing", fh)
 			return -fuse.EIO
 		}
 
 		if err := node.handle.Close(); err != nil {
-			fs.errs <- fmt.Errorf("failed to close node handle: %v", err)
+			s.errs <- fmt.Errorf("failed to close node handle: %v", err)
 			return -fuse.EIO
 		}
 
@@ -175,11 +193,11 @@ func (fs *Store) Close(fh uint64) int {
 }
 
 //Get will lookup or get an open node
-func (fs *Store) Get(path string, fh uint64) *Node {
+func (s *Store) Get(path string, fh uint64) *Node {
 	if ^uint64(0) == fh {
-		_, _, node := fs.Lookup(path, nil)
+		_, _, node := s.Lookup(path, nil)
 		return node
 	}
 
-	return fs.openmap[fh]
+	return s.openmap[fh]
 }

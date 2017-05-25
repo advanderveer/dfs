@@ -8,7 +8,6 @@ import (
 
 var nodes = map[uint64]*Node{}
 
-//nodeData is the persisting part of a Node
 type nodeData struct {
 	Stat fuse.Stat_t
 	Xatr map[string][]byte
@@ -19,7 +18,6 @@ type nodeData struct {
 //Node represents a filesystem node
 type Node struct {
 	nodeData
-
 	opencnt int
 	handle  *os.File
 }
@@ -66,20 +64,6 @@ func (node *Node) EachChild(next func(name string, n *Node) bool) {
 			break
 		}
 	}
-}
-
-//GetChild gets a child node by name or returns nil if it doesn't exist
-func (node *Node) GetChild(name string) (n *Node) {
-	ino, ok := node.Chld[name]
-	if ok {
-		n, ok = nodes[ino]
-		if ok {
-			n.nodeData, _ = store[ino] //@TODO load from database
-			//@TODO what if not OK(?)
-		}
-	}
-
-	return
 }
 
 //PutChild sets a child node by name
