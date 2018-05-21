@@ -1,8 +1,6 @@
 package nodes
 
 import (
-	"strings"
-
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -54,6 +52,9 @@ func (n *NodeT) CountChld() int64 {
 	return int64(len(n.chld))
 }
 
+func (n *NodeT) GetChld(name string) *NodeT {
+	return n.chld[name]
+}
 func (n *NodeT) ChldEach(f func(name string, n *NodeT) bool) {
 	for name, n := range n.chld {
 		stop := f(name, n)
@@ -105,26 +106,4 @@ type Store struct {
 	root *NodeT
 }
 
-func split(path string) []string {
-	return strings.Split(path, "/")
-}
-
-func (self *Store) LookupNode(path string, ancestor *NodeT) (prnt *NodeT, name string, node *NodeT) {
-	prnt = self.root
-	name = ""
-	node = self.root
-	for _, c := range split(path) {
-		if "" != c {
-			if 255 < len(c) {
-				panic(fuse.Error(-fuse.ENAMETOOLONG))
-			}
-			prnt, name = node, c
-			node = node.chld[c]
-			if nil != ancestor && node == ancestor {
-				name = "" // special case loop condition
-				return
-			}
-		}
-	}
-	return
-}
+func (store *Store) Root() *NodeT { return store.root }

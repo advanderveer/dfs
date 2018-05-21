@@ -15,6 +15,7 @@ package ffs
 import (
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 
 	"github.com/advanderveer/dfs/ffs/nodes"
@@ -23,14 +24,14 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
+func split(path string) []string {
+	return strings.Split(path, "/")
+}
+
 func trace(vals ...interface{}) func(vals ...interface{}) {
 	uid, gid, _ := fuse.Getcontext()
 	return shared.Trace(1, fmt.Sprintf("[uid=%v,gid=%v]", uid, gid), vals...)
 }
-
-// func split(path string) []string {
-// 	return strings.Split(path, "/")
-// }
 
 func resize(slice []byte, size int64, zeroinit bool) []byte {
 	const allocunit = 64 * 1024
@@ -56,40 +57,6 @@ func resize(slice []byte, size int64, zeroinit bool) []byte {
 	}
 	return slice
 }
-
-// type node_t struct {
-// 	stat    fuse.Stat_t
-// 	xatr    map[string][]byte
-// 	chld    map[string]*node_t
-// 	data    []byte
-// 	opencnt int
-// }
-
-// func newNode(dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *nodes.NodeT {
-// 	tmsp := fuse.Now()
-// 	self := node_t{
-// 		fuse.Stat_t{
-// 			Dev:      dev,
-// 			Ino:      ino,
-// 			Mode:     mode,
-// 			Nlink:    1,
-// 			Uid:      uid,
-// 			Gid:      gid,
-// 			Atim:     tmsp,
-// 			Mtim:     tmsp,
-// 			Ctim:     tmsp,
-// 			Birthtim: tmsp,
-// 			Flags:    0,
-// 		},
-// 		nil,
-// 		nil,
-// 		nil,
-// 		0}
-// 	if fuse.S_IFDIR == self.stat.Mode&fuse.S_IFMT {
-// 		self.chld = map[string]*nodes.NodeT{}
-// 	}
-// 	return &self
-// }
 
 type Memfs struct {
 	fuse.FileSystemBase
@@ -131,30 +98,24 @@ func (self *Memfs) Rmdir(path string) (errc int) {
 func (self *Memfs) Link(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
 	defer self.synchronize()()
-	_, _, oldnode := self.store.LookupNode(oldpath, nil)
+	_, _, oldnode := self.lookupNode(oldpath, nil)
 	if nil == oldnode {
 		return -fuse.ENOENT
 	}
-	newprnt, newname, newnode := self.store.LookupNode(newpath, nil)
+	newprnt, newname, newnode := self.lookupNode(newpath, nil)
 	if nil == newprnt {
 		return -fuse.ENOENT
 	}
 	if nil != newnode {
 		return -fuse.EEXIST
 	}
-	// oldnode.stat.Nlink++
-	oldnode.StatIncNlink()
 
-	// newprnt.chld[newname] = oldnode
+	oldnode.StatIncNlink()
 	newprnt.SetChld(newname, oldnode)
 
 	tmsp := fuse.Now()
-	// oldnode.stat.Ctim = tmsp
 	oldnode.StatSetCTim(tmsp)
-	// newprnt.stat.Ctim = tmsp
 	newprnt.StatSetCTim(tmsp)
-
-	// newprnt.stat.Mtim = tmsp
 	newprnt.StatSetMTim(tmsp)
 	return 0
 }
@@ -168,7 +129,7 @@ func (self *Memfs) Symlink(target string, newpath string) (errc int) {
 func (self *Memfs) Readlink(path string) (errc int, target string) {
 	defer trace(path)(&errc, &target)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT, ""
 	}
@@ -181,11 +142,11 @@ func (self *Memfs) Readlink(path string) (errc int, target string) {
 func (self *Memfs) Rename(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
 	defer self.synchronize()()
-	oldprnt, oldname, oldnode := self.store.LookupNode(oldpath, nil)
+	oldprnt, oldname, oldnode := self.lookupNode(oldpath, nil)
 	if nil == oldnode {
 		return -fuse.ENOENT
 	}
-	newprnt, newname, newnode := self.store.LookupNode(newpath, oldnode)
+	newprnt, newname, newnode := self.lookupNode(newpath, oldnode)
 	if nil == newprnt {
 		return -fuse.ENOENT
 	}
@@ -202,10 +163,8 @@ func (self *Memfs) Rename(oldpath string, newpath string) (errc int) {
 			return errc
 		}
 	}
-	// delete(oldprnt.chld, oldname)
-	oldprnt.DelChld(oldname)
 
-	// newprnt.chld[newname] = oldnode
+	oldprnt.DelChld(oldname)
 	newprnt.SetChld(newname, oldnode)
 	return 0
 }
@@ -213,14 +172,12 @@ func (self *Memfs) Rename(oldpath string, newpath string) (errc int) {
 func (self *Memfs) Chmod(path string, mode uint32) (errc int) {
 	defer trace(path, mode)(&errc)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	// node.stat.Mode = (node.stat.Mode & fuse.S_IFMT) | mode&07777
-	node.StatSetMode((node.Stat().Mode & fuse.S_IFMT) | mode&07777)
 
-	// node.stat.Ctim = fuse.Now()
+	node.StatSetMode((node.Stat().Mode & fuse.S_IFMT) | mode&07777)
 	node.StatSetCTim(fuse.Now())
 	return 0
 }
@@ -228,19 +185,17 @@ func (self *Memfs) Chmod(path string, mode uint32) (errc int) {
 func (self *Memfs) Chown(path string, uid uint32, gid uint32) (errc int) {
 	defer trace(path, uid, gid)(&errc)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
 	if ^uint32(0) != uid {
-		// node.stat.Uid = uid
 		node.StatSetUid(uid)
 	}
 	if ^uint32(0) != gid {
-		// node.stat.Gid = gid
 		node.StatSetGid(gid)
 	}
-	// node.stat.Ctim = fuse.Now()
+
 	node.StatSetCTim(fuse.Now())
 	return 0
 }
@@ -248,21 +203,19 @@ func (self *Memfs) Chown(path string, uid uint32, gid uint32) (errc int) {
 func (self *Memfs) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	// node.stat.Ctim = fuse.Now()
+
 	node.StatSetCTim(fuse.Now())
 	if nil == tmsp {
-		// tmsp0 := node.stat.Ctim
 		tmsp0 := node.Stat().Ctim
 		tmsa := [2]fuse.Timespec{tmsp0, tmsp0}
 		tmsp = tmsa[:]
 	}
-	// node.stat.Atim = tmsp[0]
+
 	node.StatSetATim(tmsp[0])
-	// node.stat.Mtim = tmsp[1]
 	node.StatSetMTim(tmsp[1])
 	return 0
 }
@@ -280,7 +233,7 @@ func (self *Memfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int)
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	*stat = node.Stat() //@TODO figure out if this works if the reference is gone
+	*stat = node.Stat()
 	return 0
 }
 
@@ -291,15 +244,12 @@ func (self *Memfs) Truncate(path string, size int64, fh uint64) (errc int) {
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	// node.data = resize(node.data, size, true)
+
 	node.SetData(resize(node.Data(), size, true))
-	// node.stat.Size = size
 	node.StatSetSize(size)
 
 	tmsp := fuse.Now()
-	// node.stat.Ctim = tmsp
 	node.StatSetCTim(tmsp)
-	// node.stat.Mtim = tmsp
 	node.StatSetMTim(tmsp)
 	return 0
 }
@@ -319,7 +269,6 @@ func (self *Memfs) Read(path string, buff []byte, ofst int64, fh uint64) (n int)
 		return 0
 	}
 	n = copy(buff, node.Data()[ofst:endofst])
-	// node.stat.Atim = fuse.Now()
 	node.StatSetATim(fuse.Now())
 	return
 }
@@ -333,18 +282,14 @@ func (self *Memfs) Write(path string, buff []byte, ofst int64, fh uint64) (n int
 	}
 	endofst := ofst + int64(len(buff))
 	if endofst > node.Stat().Size {
-		// node.data = resize(node.data, endofst, true)
 		node.SetData(resize(node.Data(), endofst, true))
-		// node.stat.Size = endofst
 		node.StatSetSize(endofst)
 	}
-	// n = copy(node.data[ofst:endofst], buff)
+
 	n = copy(node.Data()[ofst:endofst], buff)
 
 	tmsp := fuse.Now()
-	// node.stat.Ctim = tmsp
 	node.StatSetCTim(tmsp)
-	// node.stat.Mtim = tmsp
 	node.StatSetMTim(tmsp)
 	return
 }
@@ -368,17 +313,10 @@ func (self *Memfs) Readdir(path string,
 	defer trace(path, fill, ofst, fh)(&errc)
 	defer self.synchronize()()
 	node := self.openmap[fh]
-	// fill(".", &node.stat, 0)
 	sta := node.Stat()
+
 	fill(".", &sta, 0)
 	fill("..", nil, 0)
-	// for name, chld := range node.Chld() {
-	// 	csta := chld.Stat()
-	// 	if !fill(name, &csta, 0) {
-	// 		break
-	// 	}
-	// }
-
 	node.ChldEach(func(name string, chld *nodes.NodeT) (stop bool) {
 		csta := chld.Stat()
 		if !fill(name, &csta, 0) {
@@ -400,7 +338,7 @@ func (self *Memfs) Releasedir(path string, fh uint64) (errc int) {
 func (self *Memfs) Setxattr(path string, name string, value []byte, flags int) (errc int) {
 	defer trace(path, name, value, flags)(&errc)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
@@ -408,22 +346,17 @@ func (self *Memfs) Setxattr(path string, name string, value []byte, flags int) (
 		return -fuse.ENOTSUP
 	}
 	if fuse.XATTR_CREATE == flags {
-		// if _, ok := node.xatr[name]; ok {
 		if _, ok := node.XAtrGet(name); ok {
 			return -fuse.EEXIST
 		}
 	} else if fuse.XATTR_REPLACE == flags {
-		// if _, ok := node.xatr[name]; !ok {
 		if _, ok := node.XAtrGet(name); !ok {
 			return -fuse.ENOATTR
 		}
 	}
+
 	xatr := make([]byte, len(value))
 	copy(xatr, value)
-	// if nil == node.xatr {
-	// 	node.xatr = map[string][]byte{}
-	// }
-	// node.xatr[name] = xatr
 	node.XAtrSet(name, xatr)
 	return 0
 }
@@ -431,14 +364,14 @@ func (self *Memfs) Setxattr(path string, name string, value []byte, flags int) (
 func (self *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
 	defer trace(path, name)(&errc, &xatr)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT, nil
 	}
 	if "com.apple.ResourceFork" == name {
 		return -fuse.ENOTSUP, nil
 	}
-	// xatr, ok := node.xatr[name]
+
 	xatr, ok := node.XAtrGet(name)
 	if !ok {
 		return -fuse.ENOATTR, nil
@@ -449,18 +382,18 @@ func (self *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
 func (self *Memfs) Removexattr(path string, name string) (errc int) {
 	defer trace(path, name)(&errc)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
 	if "com.apple.ResourceFork" == name {
 		return -fuse.ENOTSUP
 	}
-	// if _, ok := node.xatr[name]; !ok {
+
 	if _, ok := node.XAtrGet(name); !ok {
 		return -fuse.ENOATTR
 	}
-	// delete(node.xatr, name)
+
 	node.XAtrDel(name)
 	return 0
 }
@@ -468,16 +401,10 @@ func (self *Memfs) Removexattr(path string, name string) (errc int) {
 func (self *Memfs) Listxattr(path string, fill func(name string) bool) (errc int) {
 	defer trace(path, fill)(&errc)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	// for name := range node.xatr {
-	// 	if !fill(name) {
-	// 		return -fuse.ERANGE
-	// 	}
-	// }
-	// return
 
 	return node.XAtrEach(func(name string) int {
 		if !fill(name) {
@@ -490,13 +417,12 @@ func (self *Memfs) Listxattr(path string, fill func(name string) bool) (errc int
 func (self *Memfs) Chflags(path string, flags uint32) (errc int) {
 	defer trace(path, flags)(&errc)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	// node.stat.Flags = flags
+
 	node.StatSetFlags(flags)
-	// node.stat.Ctim = fuse.Now()
 	node.StatSetCTim(fuse.Now())
 	return 0
 }
@@ -504,13 +430,12 @@ func (self *Memfs) Chflags(path string, flags uint32) (errc int) {
 func (self *Memfs) Setcrtime(path string, tmsp fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	// node.stat.Birthtim = tmsp
+
 	node.StatSetBirthTim(tmsp)
-	// node.stat.Ctim = fuse.Now()
 	node.StatSetCTim(fuse.Now())
 	return 0
 }
@@ -518,17 +443,17 @@ func (self *Memfs) Setcrtime(path string, tmsp fuse.Timespec) (errc int) {
 func (self *Memfs) Setchgtime(path string, tmsp fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
 	defer self.synchronize()()
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	// node.stat.Ctim = tmsp
+
 	node.StatSetCTim(tmsp)
 	return 0
 }
 
 func (self *Memfs) makeNode(path string, mode uint32, dev uint64, data []byte) int {
-	prnt, name, node := self.store.LookupNode(path, nil)
+	prnt, name, node := self.lookupNode(path, nil)
 	if nil == prnt {
 		return -fuse.ENOENT
 	}
@@ -539,24 +464,19 @@ func (self *Memfs) makeNode(path string, mode uint32, dev uint64, data []byte) i
 	uid, gid, _ := fuse.Getcontext()
 	node = nodes.NewNode(dev, self.ino, mode, uid, gid)
 	if nil != data {
-		// node.data = make([]byte, len(data))
 		node.SetData(make([]byte, len(data)))
-		// node.stat.Size = int64(len(data))
 		node.StatSetSize(int64(len(data)))
-		// copy(node.data, data)
 		node.CopyData(data)
 	}
-	// prnt.chld[name] = node
+
 	prnt.SetChld(name, node)
-	// prnt.stat.Ctim = node.stat.Ctim
 	prnt.StatSetCTim(node.Stat().Ctim)
-	// prnt.stat.Mtim = node.stat.Ctim
 	prnt.StatSetMTim(node.Stat().Ctim)
 	return 0
 }
 
 func (self *Memfs) removeNode(path string, dir bool) int {
-	prnt, name, node := self.store.LookupNode(path, nil)
+	prnt, name, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
@@ -566,26 +486,23 @@ func (self *Memfs) removeNode(path string, dir bool) int {
 	if dir && fuse.S_IFDIR != node.Stat().Mode&fuse.S_IFMT {
 		return -fuse.ENOTDIR
 	}
-	// if 0 < len(node.chld) {
+
 	if 0 < node.CountChld() {
 		return -fuse.ENOTEMPTY
 	}
-	// node.stat.Nlink--
+
 	node.StatDecNlink()
-	// delete(prnt.chld, name)
 	prnt.DelChld(name)
+
 	tmsp := fuse.Now()
-	// node.stat.Ctim = tmsp
 	node.StatSetCTim(tmsp)
-	// prnt.stat.Ctim = tmsp
 	prnt.StatSetCTim(tmsp)
-	// prnt.stat.Mtim = tmsp
 	prnt.StatSetMTim(tmsp)
 	return 0
 }
 
 func (self *Memfs) openNode(path string, dir bool) (int, uint64) {
-	_, _, node := self.store.LookupNode(path, nil)
+	_, _, node := self.lookupNode(path, nil)
 	if nil == node {
 		return -fuse.ENOENT, ^uint64(0)
 	}
@@ -595,9 +512,8 @@ func (self *Memfs) openNode(path string, dir bool) (int, uint64) {
 	if dir && fuse.S_IFDIR != node.Stat().Mode&fuse.S_IFMT {
 		return -fuse.ENOTDIR, ^uint64(0)
 	}
-	// node.opencnt++
+
 	node.IncOpencnt()
-	// if 1 == node.opencnt {
 	if 1 == node.Opencnt() {
 		self.openmap[node.Stat().Ino] = node
 	}
@@ -606,22 +522,41 @@ func (self *Memfs) openNode(path string, dir bool) (int, uint64) {
 
 func (self *Memfs) closeNode(fh uint64) int {
 	node := self.openmap[fh]
-	// node.opencnt--
 	node.DecOpencnt()
-	// if 0 == node.opencnt {
 	if 0 == node.Opencnt() {
 		delete(self.openmap, node.Stat().Ino)
 	}
+
 	return 0
 }
 
 func (self *Memfs) getNode(path string, fh uint64) *nodes.NodeT {
 	if ^uint64(0) == fh {
-		_, _, node := self.store.LookupNode(path, nil)
+		_, _, node := self.lookupNode(path, nil)
 		return node
 	} else {
 		return self.openmap[fh]
 	}
+}
+
+func (self *Memfs) lookupNode(path string, ancestor *nodes.NodeT) (prnt *nodes.NodeT, name string, node *nodes.NodeT) {
+	prnt = self.store.Root()
+	name = ""
+	node = self.store.Root()
+	for _, c := range split(path) {
+		if "" != c {
+			if 255 < len(c) {
+				panic(fuse.Error(-fuse.ENAMETOOLONG))
+			}
+			prnt, name = node, c
+			node = node.GetChld(name)
+			if nil != ancestor && node == ancestor {
+				name = "" // special case loop condition
+				return
+			}
+		}
+	}
+	return
 }
 
 func (self *Memfs) synchronize() func() {
@@ -639,11 +574,6 @@ func NewFS(tr fdb.Transactor) (*Memfs, error) {
 		nodes.NewNode(0, self.ino, fuse.S_IFDIR|00777, 0, 0),
 	)
 
-	// self.store = &nodes.Store{
-	// 	Root: nodes.NewNode(0, self.ino, fuse.S_IFDIR|00777, 0, 0),
-	// }
-
-	// self.root = newNode(0, self.ino, fuse.S_IFDIR|00777, 0, 0)
 	self.openmap = map[uint64]*nodes.NodeT{}
 	return &self, nil
 }
