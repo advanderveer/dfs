@@ -480,7 +480,7 @@ func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev ui
 
 	self.store.IncIno(tx)
 	uid, gid, _ := fuse.Getcontext()
-	node = nodes.NewNode(dev, self.store.Ino(tx), mode, uid, gid)
+	node = self.store.NewNode(tx, dev, self.store.Ino(tx), mode, uid, gid)
 	if nil != data {
 		node.SetData(tx, make([]byte, len(data)))
 		node.StatSetSize(tx, int64(len(data)))

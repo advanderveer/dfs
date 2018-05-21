@@ -23,7 +23,7 @@ func db() (tr fdb.Transactor, ss directory.DirectorySubspace, f func()) {
 		log.Fatal("failed to create or open app dir:", err)
 	}
 
-	return db, ss, func() {
+	return db, dir, func() {
 		_, err := dir.Remove(db, nil)
 		if err != nil {
 			log.Fatal("failed to remove testing dir:", err)

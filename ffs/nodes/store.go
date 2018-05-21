@@ -17,12 +17,26 @@ type Store struct {
 }
 
 func NewStore(tr fdb.Transactor, ss fdbdir.DirectorySubspace) *Store {
-	return &Store{
-		root: NewNode(0, 0, fuse.S_IFDIR|00777, 0, 0), //@TODO check if its ok if the root always has ino0, tr: tr, ss: ss}
-		tr:   tr,
-		ss:   ss,
-		ino:  1,
+	store := &Store{
+		tr:  tr,
+		ss:  ss,
+		ino: 1,
 	}
+
+	if _, err := tr.Transact(func(tx fdb.Transaction) (r interface{}, e error) {
+		store.root = store.NewNode(tx, 0, 0, fuse.S_IFDIR|00777, 0, 0) //@TODO check if its ok if the root always has ino0, tr: tr, ss: ss}
+		return
+	}); err != nil {
+		panic("ffs: failed to create root node")
+	}
+
+	return store
+}
+
+func (store *Store) NewNode(tx fdb.Transaction, dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *NodeT {
+	node := NodeT{ss: store.ss.Sub(int64(ino))}
+	node.Init(tx, dev, ino, mode, uid, gid)
+	return &node
 }
 
 func (store *Store) IncIno(tx fdb.Transaction) {
