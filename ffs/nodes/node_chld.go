@@ -31,7 +31,7 @@ func (n *Node) GetChld(tx fdb.Transaction, name string) *Node {
 
 func (n *Node) SetChld(tx fdb.Transaction, name string, nn *Node) {
 	b := make([]byte, 8)
-	endianess.PutUint64(b, nn.statGetIno(tx))
+	endianess.PutUint64(b, nn.StatGetIno(tx))
 	tx.Set(n.ss.Pack(tuple.Tuple{"chldr", name}), b) //ref
 }
 

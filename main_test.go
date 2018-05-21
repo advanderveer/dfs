@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/advanderveer/dfs/ffs"
+	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
@@ -20,7 +21,7 @@ import (
 // 2/ tools: https://github.com/billziss-gh/secfs.test
 
 func TestQuickIO(t *testing.T) {
-	dbdir, err := ioutil.TempDir("", "dfs_")
+	bdir, err := ioutil.TempDir("", "dfs_")
 	ok(t, err)
 
 	db, dir, clean := db()
@@ -30,10 +31,15 @@ func TestQuickIO(t *testing.T) {
 		t.Skip("no windows testing yet")
 	} else {
 		t.Run("linux/osx fuzzing", func(t *testing.T) {
-			fmt.Println("dbdir:", dbdir)
+			fmt.Println("blocks dir:", bdir)
+
+			bstore, err := blocks.NewStore(bdir, "")
+			if err != nil {
+				t.Fatal("failed to create block store", bstore)
+			}
 
 			//@TODO open fdb
-			dfs, err := ffs.NewFS(nodes.NewStore(db, dir))
+			dfs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore)
 			ok(t, err)
 
 			host := fuse.NewFileSystemHost(dfs)
@@ -73,6 +79,10 @@ func TestQuickIO(t *testing.T) {
 					equals(t, 1, n)
 				})
 
+				dira := filepath.Join(mntdir, "a")
+				err = os.Mkdir(dira, 0777)
+				ok(t, err)
+
 				t.Run("run fsx", func(t *testing.T) {
 					cmd := exec.Command("fsx", "-N", "5000", "test", "xxxxxx")
 					cmd.Dir = mntdir
@@ -90,10 +100,6 @@ func TestQuickIO(t *testing.T) {
 					ok(t, err)
 					equals(t, true, cmd.ProcessState.Success())
 				})
-
-				dira := filepath.Join(mntdir, "a")
-				err = os.Mkdir(dira, 0777)
-				ok(t, err)
 
 				t.Run("run fstorture", func(t *testing.T) {
 

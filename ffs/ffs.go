@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/billziss-gh/cgofuse/examples/shared"
@@ -47,7 +48,8 @@ func resize(slice []byte, size int64, zeroinit bool) []byte {
 
 type Memfs struct {
 	fuse.FileSystemBase
-	store *nodes.Store
+	nstore *nodes.Store
+	bstore *blocks.Store
 
 	//@TODO find out if we need to store this map on the remote, maybe to act as
 	//a locking mechanis or to report recent interactions
@@ -61,35 +63,35 @@ func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
 
 func (self *Memfs) Mknod(path string, mode uint32, dev uint64) (errc int) {
 	defer trace(path, mode, dev)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		return self.makeNode(tx, path, mode, dev, nil)
 	})
 }
 
 func (self *Memfs) Mkdir(path string, mode uint32) (errc int) {
 	defer trace(path, mode)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		return self.makeNode(tx, path, fuse.S_IFDIR|(mode&07777), 0, nil)
 	})
 }
 
 func (self *Memfs) Unlink(path string) (errc int) {
 	defer trace(path)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		return self.removeNode(tx, path, false)
 	})
 }
 
 func (self *Memfs) Rmdir(path string) (errc int) {
 	defer trace(path)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		return self.removeNode(tx, path, true)
 	})
 }
 
 func (self *Memfs) Link(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		_, _, oldnode := self.lookupNode(tx, oldpath, nil)
 		if nil == oldnode {
 			return -fuse.ENOENT
@@ -115,14 +117,14 @@ func (self *Memfs) Link(oldpath string, newpath string) (errc int) {
 
 func (self *Memfs) Symlink(target string, newpath string) (errc int) {
 	defer trace(target, newpath)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		return self.makeNode(tx, newpath, fuse.S_IFLNK|00777, 0, []byte(target))
 	})
 }
 
 func (self *Memfs) Readlink(path string) (errc int, target string) {
 	defer trace(path)(&errc, &target)
-	return self.store.TxWithErrcStr(func(tx fdb.Transaction) (int, string) {
+	return self.nstore.TxWithErrcStr(func(tx fdb.Transaction) (int, string) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT, ""
@@ -130,13 +132,13 @@ func (self *Memfs) Readlink(path string) (errc int, target string) {
 		if fuse.S_IFLNK != node.Stat(tx).Mode&fuse.S_IFMT {
 			return -fuse.EINVAL, ""
 		}
-		return 0, string(node.Data(tx))
+		return 0, string(self.bstore.ReadData(node, tx))
 	})
 }
 
 func (self *Memfs) Rename(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		oldprnt, oldname, oldnode := self.lookupNode(tx, oldpath, nil)
 		if nil == oldnode {
 			return -fuse.ENOENT
@@ -166,7 +168,7 @@ func (self *Memfs) Rename(oldpath string, newpath string) (errc int) {
 
 func (self *Memfs) Chmod(path string, mode uint32) (errc int) {
 	defer trace(path, mode)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -180,7 +182,7 @@ func (self *Memfs) Chmod(path string, mode uint32) (errc int) {
 
 func (self *Memfs) Chown(path string, uid uint32, gid uint32) (errc int) {
 	defer trace(path, uid, gid)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -199,7 +201,7 @@ func (self *Memfs) Chown(path string, uid uint32, gid uint32) (errc int) {
 
 func (self *Memfs) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -220,14 +222,14 @@ func (self *Memfs) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 
 func (self *Memfs) Open(path string, flags int) (errc int, fh uint64) {
 	defer trace(path, flags)(&errc, &fh)
-	return self.store.TxWithErrcUint64(func(tx fdb.Transaction) (int, uint64) {
+	return self.nstore.TxWithErrcUint64(func(tx fdb.Transaction) (int, uint64) {
 		return self.openNode(tx, path, false)
 	})
 }
 
 func (self *Memfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc, stat)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		node := self.getNode(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
@@ -239,13 +241,13 @@ func (self *Memfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int)
 
 func (self *Memfs) Truncate(path string, size int64, fh uint64) (errc int) {
 	defer trace(path, size, fh)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		node := self.getNode(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 
-		node.SetData(tx, resize(node.Data(tx), size, true))
+		self.bstore.WriteData(node, tx, resize(self.bstore.ReadData(node, tx), size, true))
 		node.StatSetSize(tx, size)
 
 		tmsp := fuse.Now()
@@ -257,7 +259,7 @@ func (self *Memfs) Truncate(path string, size int64, fh uint64) (errc int) {
 
 func (self *Memfs) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	defer trace(path, buff, ofst, fh)(&n)
-	return self.store.TxWithInt(func(tx fdb.Transaction) (n int) {
+	return self.nstore.TxWithInt(func(tx fdb.Transaction) (n int) {
 		node := self.getNode(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
@@ -269,7 +271,7 @@ func (self *Memfs) Read(path string, buff []byte, ofst int64, fh uint64) (n int)
 		if endofst < ofst {
 			return 0
 		}
-		n = copy(buff, node.Data(tx)[ofst:endofst])
+		n = copy(buff, self.bstore.ReadData(node, tx)[ofst:endofst])
 		node.StatSetATim(tx, fuse.Now())
 		return
 	})
@@ -277,18 +279,21 @@ func (self *Memfs) Read(path string, buff []byte, ofst int64, fh uint64) (n int)
 
 func (self *Memfs) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	defer trace(path, buff, ofst, fh)(&n)
-	return self.store.TxWithInt(func(tx fdb.Transaction) (n int) {
+	return self.nstore.TxWithInt(func(tx fdb.Transaction) (n int) {
 		node := self.getNode(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
 		}
+
 		endofst := ofst + int64(len(buff))
 		if endofst > node.Stat(tx).Size {
-			node.SetData(tx, resize(node.Data(tx), endofst, true))
+			// node.SetData(tx, resize(self.bstore.ReadData(node, tx), endofst, true))
+			self.bstore.WriteData(node, tx, resize(self.bstore.ReadData(node, tx), endofst, true))
 			node.StatSetSize(tx, endofst)
 		}
 
-		n = copy(node.Data(tx)[ofst:endofst], buff)
+		//@TODO this copy is not persisted as is
+		n = copy(self.bstore.ReadData(node, tx)[ofst:endofst], buff)
 
 		tmsp := fuse.Now()
 		node.StatSetCTim(tx, tmsp)
@@ -299,14 +304,14 @@ func (self *Memfs) Write(path string, buff []byte, ofst int64, fh uint64) (n int
 
 func (self *Memfs) Release(path string, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		return self.closeNode(tx, fh)
 	})
 }
 
 func (self *Memfs) Opendir(path string) (errc int, fh uint64) {
 	defer trace(path)(&errc, &fh)
-	return self.store.TxWithErrcUint64(func(tx fdb.Transaction) (int, uint64) {
+	return self.nstore.TxWithErrcUint64(func(tx fdb.Transaction) (int, uint64) {
 		return self.openNode(tx, path, true)
 	})
 
@@ -317,7 +322,7 @@ func (self *Memfs) Readdir(path string,
 	ofst int64,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		node := self.openmap[fh]
 		sta := node.Stat(tx)
 
@@ -338,14 +343,14 @@ func (self *Memfs) Readdir(path string,
 
 func (self *Memfs) Releasedir(path string, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		return self.closeNode(tx, fh)
 	})
 }
 
 func (self *Memfs) Setxattr(path string, name string, value []byte, flags int) (errc int) {
 	defer trace(path, name, value, flags)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -372,7 +377,7 @@ func (self *Memfs) Setxattr(path string, name string, value []byte, flags int) (
 
 func (self *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
 	defer trace(path, name)(&errc, &xatr)
-	return self.store.TxWithErrcBytes(func(tx fdb.Transaction) (int, []byte) {
+	return self.nstore.TxWithErrcBytes(func(tx fdb.Transaction) (int, []byte) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT, nil
@@ -391,7 +396,7 @@ func (self *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
 
 func (self *Memfs) Removexattr(path string, name string) (errc int) {
 	defer trace(path, name)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -411,7 +416,7 @@ func (self *Memfs) Removexattr(path string, name string) (errc int) {
 
 func (self *Memfs) Listxattr(path string, fill func(name string) bool) (errc int) {
 	defer trace(path, fill)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -428,7 +433,7 @@ func (self *Memfs) Listxattr(path string, fill func(name string) bool) (errc int
 
 func (self *Memfs) Chflags(path string, flags uint32) (errc int) {
 	defer trace(path, flags)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -442,7 +447,7 @@ func (self *Memfs) Chflags(path string, flags uint32) (errc int) {
 
 func (self *Memfs) Setcrtime(path string, tmsp fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -456,7 +461,7 @@ func (self *Memfs) Setcrtime(path string, tmsp fuse.Timespec) (errc int) {
 
 func (self *Memfs) Setchgtime(path string, tmsp fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
-	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
@@ -477,13 +482,15 @@ func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev ui
 		return -fuse.EEXIST
 	}
 
-	self.store.IncIno(tx)
+	self.nstore.IncIno(tx)
 	uid, gid, _ := fuse.Getcontext()
-	node = self.store.NewNode(tx, dev, self.store.Ino(tx), mode, uid, gid)
+	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uid, gid)
 	if nil != data {
-		node.SetData(tx, make([]byte, len(data)))
+		// node.SetData(tx, make([]byte, len(data)))
+		self.bstore.WriteData(node, tx, make([]byte, len(data)))
 		node.StatSetSize(tx, int64(len(data)))
-		node.CopyData(tx, data)
+		// node.CopyData(tx, data)
+		self.bstore.CopyData(node, tx, data)
 	}
 
 	prnt.SetChld(tx, name, node)
@@ -557,9 +564,9 @@ func (self *Memfs) getNode(tx fdb.Transaction, path string, fh uint64) *nodes.No
 }
 
 func (self *Memfs) lookupNode(tx fdb.Transaction, path string, ancestor *nodes.Node) (prnt *nodes.Node, name string, node *nodes.Node) {
-	prnt = self.store.Root(tx)
+	prnt = self.nstore.Root(tx)
 	name = ""
-	node = self.store.Root(tx)
+	node = self.nstore.Root(tx)
 	for _, c := range split(path) {
 		if "" != c {
 			if 255 < len(c) {
@@ -576,9 +583,10 @@ func (self *Memfs) lookupNode(tx fdb.Transaction, path string, ancestor *nodes.N
 	return
 }
 
-func NewFS(store *nodes.Store) (*Memfs, error) {
+func NewFS(nstore *nodes.Store, bstore *blocks.Store) (*Memfs, error) {
 	self := Memfs{}
-	self.store = store
+	self.nstore = nstore
+	self.bstore = bstore
 	self.openmap = map[uint64]*nodes.Node{}
 	return &self, nil
 }

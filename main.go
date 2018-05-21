@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/advanderveer/dfs/ffs"
+	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
@@ -37,18 +38,23 @@ func main() {
 		logs.Fatalf("please provide the mount path and db dir")
 	}
 
-	logs.Printf("mounting filesystem from '%s'", os.Args[1])
+	logs.Printf("mounting filesystem from '%s' at '%s'", os.Args[1], os.Args[2])
 	defer logs.Printf("unmounted, done!")
 
 	err := os.MkdirAll(os.Args[1], 0777)
 	if err != nil {
-		logs.Fatalf("failed to create storage dir: %v", err)
+		logs.Fatalf("failed to create block storage dir: %v", err)
 	}
 
-	db, dir, clean := db()
-	defer clean()
+	db, dir, _ := db()
+	// defer clean()
 
-	fs, err := ffs.NewFS(nodes.NewStore(db, dir))
+	bstore, err := blocks.NewStore(os.Args[1], "blocks")
+	if err != nil {
+		logs.Fatalf("failed to create block store: %v", err)
+	}
+
+	fs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore)
 	if err != nil {
 		logs.Fatalf("failed to create filesystem: %v", err)
 	}
