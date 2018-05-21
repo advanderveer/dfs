@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/advanderveer/dfs/ffs"
+	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -22,6 +23,9 @@ func TestQuickIO(t *testing.T) {
 	dbdir, err := ioutil.TempDir("", "dfs_")
 	ok(t, err)
 
+	db, dir, clean := db()
+	defer clean()
+
 	if runtime.GOOS == "windows" {
 		t.Skip("no windows testing yet")
 	} else {
@@ -29,8 +33,9 @@ func TestQuickIO(t *testing.T) {
 			fmt.Println("dbdir:", dbdir)
 
 			//@TODO open fdb
-			dfs, err := ffs.NewFS(nil)
+			dfs, err := ffs.NewFS(nodes.NewStore(db, dir))
 			ok(t, err)
+
 			host := fuse.NewFileSystemHost(dfs)
 			host.SetCapReaddirPlus(true)
 
