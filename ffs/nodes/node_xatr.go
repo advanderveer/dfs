@@ -6,11 +6,11 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-func (n *NodeT) XAtrDel(tx fdb.Transaction, name string) {
+func (n Node) XAtrDel(tx fdb.Transaction, name string) {
 	tx.Clear(n.ss.Pack(tuple.Tuple{"xatr", name}))
 }
 
-func (n *NodeT) XAtrGet(tx fdb.Transaction, name string) (a []byte, ok bool) {
+func (n Node) XAtrGet(tx fdb.Transaction, name string) (a []byte, ok bool) {
 	d, err := tx.Get(n.ss.Pack(tuple.Tuple{"xatr", name})).Get()
 	if err != nil { //@TODO handle other errors
 		return nil, false
@@ -19,7 +19,7 @@ func (n *NodeT) XAtrGet(tx fdb.Transaction, name string) (a []byte, ok bool) {
 	return d, true
 }
 
-func (n *NodeT) XAtrSet(tx fdb.Transaction, name string, xatr []byte) {
+func (n Node) XAtrSet(tx fdb.Transaction, name string, xatr []byte) {
 	if len(xatr) > 100*1000 {
 		panic("ffs: tried to set xattr that is larger then 100KB reached") //@TODO handle more graceflly
 	}
@@ -27,7 +27,7 @@ func (n *NodeT) XAtrSet(tx fdb.Transaction, name string, xatr []byte) {
 	tx.Set(n.ss.Pack(tuple.Tuple{"xatr", name}), xatr)
 }
 
-func (n *NodeT) XAtrEach(tx fdb.Transaction, f func(name string) int) (errc int) {
+func (n Node) XAtrEach(tx fdb.Transaction, f func(name string) int) (errc int) {
 	rng := n.ss.Sub("xatr")
 	iter := tx.GetRange(rng, fdb.RangeOptions{Limit: 20}).Iterator()
 	for iter.Advance() {

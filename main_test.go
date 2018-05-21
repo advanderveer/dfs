@@ -50,6 +50,11 @@ func TestQuickIO(t *testing.T) {
 					}
 				}
 
+				t.Run("basic ops", func(t *testing.T) {
+					errc := dfs.Mkdir("/foobar", 0777)
+					equals(t, 0, errc)
+				})
+
 				t.Run("test list xattr", func(t *testing.T) {
 					errc := dfs.Setxattr("/", "hello", []byte("bar"), 0)
 					equals(t, 0, errc)

@@ -51,7 +51,7 @@ type Memfs struct {
 
 	//@TODO find out if we need to store this map on the remote, maybe to act as
 	//a locking mechanis or to report recent interactions
-	openmap map[uint64]*nodes.NodeT
+	openmap map[uint64]*nodes.Node
 }
 
 func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
@@ -317,14 +317,13 @@ func (self *Memfs) Readdir(path string,
 	ofst int64,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		node := self.openmap[fh]
 		sta := node.Stat(tx)
 
 		fill(".", &sta, 0)
 		fill("..", nil, 0)
-		node.ChldEach(tx, func(name string, chld *nodes.NodeT) (stop bool) {
+		node.ChldEach(tx, func(name string, chld *nodes.Node) (stop bool) {
 			csta := chld.Stat(tx)
 			if !fill(name, &csta, 0) {
 				return true
@@ -548,7 +547,7 @@ func (self *Memfs) closeNode(tx fdb.Transaction, fh uint64) int {
 	return 0
 }
 
-func (self *Memfs) getNode(tx fdb.Transaction, path string, fh uint64) *nodes.NodeT {
+func (self *Memfs) getNode(tx fdb.Transaction, path string, fh uint64) *nodes.Node {
 	if ^uint64(0) == fh {
 		_, _, node := self.lookupNode(tx, path, nil)
 		return node
@@ -557,7 +556,7 @@ func (self *Memfs) getNode(tx fdb.Transaction, path string, fh uint64) *nodes.No
 	}
 }
 
-func (self *Memfs) lookupNode(tx fdb.Transaction, path string, ancestor *nodes.NodeT) (prnt *nodes.NodeT, name string, node *nodes.NodeT) {
+func (self *Memfs) lookupNode(tx fdb.Transaction, path string, ancestor *nodes.Node) (prnt *nodes.Node, name string, node *nodes.Node) {
 	prnt = self.store.Root(tx)
 	name = ""
 	node = self.store.Root(tx)
@@ -580,7 +579,7 @@ func (self *Memfs) lookupNode(tx fdb.Transaction, path string, ancestor *nodes.N
 func NewFS(store *nodes.Store) (*Memfs, error) {
 	self := Memfs{}
 	self.store = store
-	self.openmap = map[uint64]*nodes.NodeT{}
+	self.openmap = map[uint64]*nodes.Node{}
 	return &self, nil
 }
 

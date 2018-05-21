@@ -12,7 +12,7 @@ type Store struct {
 	tr   fdb.Transactor
 	ss   fdbdir.DirectorySubspace
 	ino  uint64
-	root *NodeT
+	root *Node
 	lock sync.Mutex
 }
 
@@ -33,11 +33,12 @@ func NewStore(tr fdb.Transactor, ss fdbdir.DirectorySubspace) *Store {
 	return store
 }
 
-func (store *Store) NewNode(tx fdb.Transaction, dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *NodeT {
-	node := NodeT{
+func (store *Store) NewNode(tx fdb.Transaction, dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node {
+	node := Node{
 		sss: store.ss,
 		ss:  store.ss.Sub(int64(ino)),
 	}
+
 	node.Init(tx, dev, ino, mode, uid, gid)
 	return &node
 }
@@ -50,7 +51,7 @@ func (store *Store) Ino(tx fdb.Transaction) uint64 {
 	return store.ino //@TODO protect by tr
 }
 
-func (store *Store) Root(tx fdb.Transaction) *NodeT {
+func (store *Store) Root(tx fdb.Transaction) *Node {
 	return store.root //@TODO ptoject by tr
 }
 
