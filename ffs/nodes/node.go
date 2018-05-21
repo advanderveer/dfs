@@ -1,13 +1,70 @@
 package nodes
 
 import (
+	"encoding/binary"
+	"time"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
+func (n *NodeT) putTimeSpec(tx fdb.Transaction, k string, ts fuse.Timespec) {
+	buf, _ := ts.Time().MarshalBinary()
+	tx.Set(n.ss.Pack(tuple.Tuple{k}), buf)
+}
+
+func (n *NodeT) getTimeSpec(tx fdb.Transaction, k string) (ts fuse.Timespec) {
+	d := tx.Get(n.ss.Pack(tuple.Tuple{k})).MustGet()
+	t := time.Time{}
+	_ = t.UnmarshalBinary(d)
+	return fuse.NewTimespec(t)
+}
+
+func (n *NodeT) getInt64At(tx fdb.Transaction, k string) (v int64) {
+	d := tx.Get(n.ss.Pack(tuple.Tuple{k})).MustGet()
+	v, _ = binary.Varint(d)
+	return v
+}
+
+func (n *NodeT) putInt64At(tx fdb.Transaction, k string, v int64) {
+	buf := make([]byte, binary.MaxVarintLen64)
+	binary.PutVarint(buf, v)
+	tx.Set(n.ss.Pack(tuple.Tuple{k}), buf)
+}
+
+func (n *NodeT) getUint64At(tx fdb.Transaction, k string) (v uint64) {
+	d := tx.Get(n.ss.Pack(tuple.Tuple{k})).MustGet()
+	if len(d) < 8 {
+		return 0
+	}
+
+	return binary.LittleEndian.Uint64(d)
+}
+
+func (n *NodeT) putUint64At(tx fdb.Transaction, k string, v uint64) {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, v)
+	tx.Set(n.ss.Pack(tuple.Tuple{k}), b)
+}
+
+func (n *NodeT) getUint32At(tx fdb.Transaction, k string) (v uint32) {
+	d := tx.Get(n.ss.Pack(tuple.Tuple{k})).MustGet()
+	if len(d) < 4 {
+		return 0
+	}
+
+	return binary.LittleEndian.Uint32(d)
+}
+
+func (n *NodeT) putUint32At(tx fdb.Transaction, k string, v uint32) {
+	b := make([]byte, 4)
+	binary.LittleEndian.PutUint32(b, v)
+	tx.Set(n.ss.Pack(tuple.Tuple{k}), b)
+}
+
 type node struct {
-	stat    fuse.Stat_t
 	xatr    map[string][]byte
 	chld    map[string]*NodeT
 	data    []byte
@@ -35,43 +92,6 @@ func (n *NodeT) Init(tx fdb.Transaction, dev uint64, ino uint64, mode uint32, ui
 	if fuse.S_IFDIR == mode&fuse.S_IFMT {
 		n.no.chld = map[string]*NodeT{}
 	}
-}
-
-func (n *NodeT) SetChld(tx fdb.Transaction, name string, nn *NodeT) { n.no.chld[name] = nn }
-func (n *NodeT) GetChld(tx fdb.Transaction, name string) *NodeT     { return n.no.chld[name] }
-
-func (n *NodeT) DelChld(tx fdb.Transaction, name string) { delete(n.no.chld, name) }
-func (n *NodeT) CountChld(tx fdb.Transaction) int64      { return int64(len(n.no.chld)) }
-func (n *NodeT) ChldEach(tx fdb.Transaction, f func(name string, n *NodeT) bool) {
-	for name, n := range n.no.chld {
-		stop := f(name, n)
-		if stop {
-			return
-		}
-	}
-}
-
-func (n *NodeT) XAtrGet(tx fdb.Transaction, name string) (a []byte, ok bool) {
-	a, ok = n.no.xatr[name]
-	return
-}
-func (n *NodeT) XAtrDel(tx fdb.Transaction, name string) { delete(n.no.xatr, name) }
-func (n *NodeT) XAtrSet(tx fdb.Transaction, name string, xatr []byte) {
-	if nil == n.no.xatr {
-		n.no.xatr = map[string][]byte{}
-	}
-	n.no.xatr[name] = xatr
-}
-
-func (n *NodeT) XAtrEach(tx fdb.Transaction, f func(name string) int) (errc int) {
-	for name := range n.no.xatr {
-		errc = f(name)
-		if errc != 0 {
-			return errc
-		}
-	}
-
-	return 0
 }
 
 func (n *NodeT) Data(tx fdb.Transaction) []byte        { return n.no.data }

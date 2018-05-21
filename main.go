@@ -45,7 +45,9 @@ func main() {
 		logs.Fatalf("failed to create storage dir: %v", err)
 	}
 
-	db, dir, _ := db()
+	db, dir, clean := db()
+	defer clean()
+
 	fs, err := ffs.NewFS(nodes.NewStore(db, dir))
 	if err != nil {
 		logs.Fatalf("failed to create filesystem: %v", err)
