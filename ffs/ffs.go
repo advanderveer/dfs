@@ -61,70 +61,40 @@ func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
 
 func (self *Memfs) Mknod(path string, mode uint32, dev uint64) (errc int) {
 	defer trace(path, mode, dev)(&errc)
-	// defer self.store.Transact()()
-	// return self.makeNode(path, mode, dev, nil)
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		return self.makeNode(path, mode, dev, nil)
+		return self.makeNode(tx, path, mode, dev, nil)
 	})
 }
 
 func (self *Memfs) Mkdir(path string, mode uint32) (errc int) {
 	defer trace(path, mode)(&errc)
-	// defer self.store.Transact()()
-	// return self.makeNode(path, fuse.S_IFDIR|(mode&07777), 0, nil)
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		return self.makeNode(path, fuse.S_IFDIR|(mode&07777), 0, nil)
+		return self.makeNode(tx, path, fuse.S_IFDIR|(mode&07777), 0, nil)
 	})
 }
 
 func (self *Memfs) Unlink(path string) (errc int) {
 	defer trace(path)(&errc)
-	// defer self.store.Transact()()
-	// return self.removeNode(path, false)
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		return self.removeNode(path, false)
+		return self.removeNode(tx, path, false)
 	})
 }
 
 func (self *Memfs) Rmdir(path string) (errc int) {
 	defer trace(path)(&errc)
-	// defer self.store.Transact()()
-	// return self.removeNode(path, true)
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		return self.removeNode(path, true)
+		return self.removeNode(tx, path, true)
 	})
 }
 
 func (self *Memfs) Link(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
-	// defer self.store.Transact()()
-	// _, _, oldnode := self.lookupNode(oldpath, nil)
-	// if nil == oldnode {
-	// 	return -fuse.ENOENT
-	// }
-	// newprnt, newname, newnode := self.lookupNode(newpath, nil)
-	// if nil == newprnt {
-	// 	return -fuse.ENOENT
-	// }
-	// if nil != newnode {
-	// 	return -fuse.EEXIST
-	// }
-	//
-	// oldnode.StatIncNlink()
-	// newprnt.SetChld(newname, oldnode)
-	//
-	// tmsp := fuse.Now()
-	// oldnode.StatSetCTim(tmsp)
-	// newprnt.StatSetCTim(tmsp)
-	// newprnt.StatSetMTim(tmsp)
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		_, _, oldnode := self.lookupNode(oldpath, nil)
+		_, _, oldnode := self.lookupNode(tx, oldpath, nil)
 		if nil == oldnode {
 			return -fuse.ENOENT
 		}
-		newprnt, newname, newnode := self.lookupNode(newpath, nil)
+		newprnt, newname, newnode := self.lookupNode(tx, newpath, nil)
 		if nil == newprnt {
 			return -fuse.ENOENT
 		}
@@ -132,84 +102,46 @@ func (self *Memfs) Link(oldpath string, newpath string) (errc int) {
 			return -fuse.EEXIST
 		}
 
-		oldnode.StatIncNlink()
-		newprnt.SetChld(newname, oldnode)
+		oldnode.StatIncNlink(tx)
+		newprnt.SetChld(tx, newname, oldnode)
 
 		tmsp := fuse.Now()
-		oldnode.StatSetCTim(tmsp)
-		newprnt.StatSetCTim(tmsp)
-		newprnt.StatSetMTim(tmsp)
+		oldnode.StatSetCTim(tx, tmsp)
+		newprnt.StatSetCTim(tx, tmsp)
+		newprnt.StatSetMTim(tx, tmsp)
 		return 0
 	})
 }
 
 func (self *Memfs) Symlink(target string, newpath string) (errc int) {
 	defer trace(target, newpath)(&errc)
-	// defer self.store.Transact()()
-	// return self.makeNode(newpath, fuse.S_IFLNK|00777, 0, []byte(target))
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		return self.makeNode(newpath, fuse.S_IFLNK|00777, 0, []byte(target))
+		return self.makeNode(tx, newpath, fuse.S_IFLNK|00777, 0, []byte(target))
 	})
 }
 
 func (self *Memfs) Readlink(path string) (errc int, target string) {
 	defer trace(path)(&errc, &target)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT, ""
-	// }
-	// if fuse.S_IFLNK != node.Stat().Mode&fuse.S_IFMT {
-	// 	return -fuse.EINVAL, ""
-	// }
-	// return 0, string(node.Data())
-
 	return self.store.TxWithErrcStr(func(tx fdb.Transaction) (int, string) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT, ""
 		}
-		if fuse.S_IFLNK != node.Stat().Mode&fuse.S_IFMT {
+		if fuse.S_IFLNK != node.Stat(tx).Mode&fuse.S_IFMT {
 			return -fuse.EINVAL, ""
 		}
-		return 0, string(node.Data())
+		return 0, string(node.Data(tx))
 	})
 }
 
 func (self *Memfs) Rename(oldpath string, newpath string) (errc int) {
 	defer trace(oldpath, newpath)(&errc)
-	// defer self.store.Transact()()
-	// oldprnt, oldname, oldnode := self.lookupNode(oldpath, nil)
-	// if nil == oldnode {
-	// 	return -fuse.ENOENT
-	// }
-	// newprnt, newname, newnode := self.lookupNode(newpath, oldnode)
-	// if nil == newprnt {
-	// 	return -fuse.ENOENT
-	// }
-	// if "" == newname {
-	// 	return -fuse.EINVAL // guard against directory loop creation
-	// }
-	// if oldprnt == newprnt && oldname == newname {
-	// 	return 0
-	// }
-	// if nil != newnode {
-	// 	errc = self.removeNode(newpath, fuse.S_IFDIR == oldnode.Stat().Mode&fuse.S_IFMT)
-	// 	if 0 != errc {
-	// 		return errc
-	// 	}
-	// }
-	//
-	// oldprnt.DelChld(oldname)
-	// newprnt.SetChld(newname, oldnode)
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		oldprnt, oldname, oldnode := self.lookupNode(oldpath, nil)
+		oldprnt, oldname, oldnode := self.lookupNode(tx, oldpath, nil)
 		if nil == oldnode {
 			return -fuse.ENOENT
 		}
-		newprnt, newname, newnode := self.lookupNode(newpath, oldnode)
+		newprnt, newname, newnode := self.lookupNode(tx, newpath, oldnode)
 		if nil == newprnt {
 			return -fuse.ENOENT
 		}
@@ -220,269 +152,162 @@ func (self *Memfs) Rename(oldpath string, newpath string) (errc int) {
 			return 0
 		}
 		if nil != newnode {
-			errc = self.removeNode(newpath, fuse.S_IFDIR == oldnode.Stat().Mode&fuse.S_IFMT)
+			errc = self.removeNode(tx, newpath, fuse.S_IFDIR == oldnode.Stat(tx).Mode&fuse.S_IFMT)
 			if 0 != errc {
 				return errc
 			}
 		}
 
-		oldprnt.DelChld(oldname)
-		newprnt.SetChld(newname, oldnode)
+		oldprnt.DelChld(tx, oldname)
+		newprnt.SetChld(tx, newname, oldnode)
 		return 0
 	})
 }
 
 func (self *Memfs) Chmod(path string, mode uint32) (errc int) {
 	defer trace(path, mode)(&errc)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	//
-	// node.StatSetMode((node.Stat().Mode & fuse.S_IFMT) | mode&07777)
-	// node.StatSetCTim(fuse.Now())
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 
-		node.StatSetMode((node.Stat().Mode & fuse.S_IFMT) | mode&07777)
-		node.StatSetCTim(fuse.Now())
+		node.StatSetMode(tx, (node.Stat(tx).Mode&fuse.S_IFMT)|mode&07777)
+		node.StatSetCTim(tx, fuse.Now())
 		return 0
 	})
 }
 
 func (self *Memfs) Chown(path string, uid uint32, gid uint32) (errc int) {
 	defer trace(path, uid, gid)(&errc)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	// if ^uint32(0) != uid {
-	// 	node.StatSetUid(uid)
-	// }
-	// if ^uint32(0) != gid {
-	// 	node.StatSetGid(gid)
-	// }
-	//
-	// node.StatSetCTim(fuse.Now())
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 		if ^uint32(0) != uid {
-			node.StatSetUid(uid)
+			node.StatSetUid(tx, uid)
 		}
 		if ^uint32(0) != gid {
-			node.StatSetGid(gid)
+			node.StatSetGid(tx, gid)
 		}
 
-		node.StatSetCTim(fuse.Now())
+		node.StatSetCTim(tx, fuse.Now())
 		return 0
 	})
 }
 
 func (self *Memfs) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	//
-	// node.StatSetCTim(fuse.Now())
-	// if nil == tmsp {
-	// 	tmsp0 := node.Stat().Ctim
-	// 	tmsa := [2]fuse.Timespec{tmsp0, tmsp0}
-	// 	tmsp = tmsa[:]
-	// }
-	//
-	// node.StatSetATim(tmsp[0])
-	// node.StatSetMTim(tmsp[1])
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 
-		node.StatSetCTim(fuse.Now())
+		node.StatSetCTim(tx, fuse.Now())
 		if nil == tmsp {
-			tmsp0 := node.Stat().Ctim
+			tmsp0 := node.Stat(tx).Ctim
 			tmsa := [2]fuse.Timespec{tmsp0, tmsp0}
 			tmsp = tmsa[:]
 		}
 
-		node.StatSetATim(tmsp[0])
-		node.StatSetMTim(tmsp[1])
+		node.StatSetATim(tx, tmsp[0])
+		node.StatSetMTim(tx, tmsp[1])
 		return 0
 	})
 }
 
 func (self *Memfs) Open(path string, flags int) (errc int, fh uint64) {
 	defer trace(path, flags)(&errc, &fh)
-	// defer self.store.Transact()()
-	// return self.openNode(path, false)
-
 	return self.store.TxWithErrcUint64(func(tx fdb.Transaction) (int, uint64) {
-		return self.openNode(path, false)
+		return self.openNode(tx, path, false)
 	})
 }
 
 func (self *Memfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc, stat)
-	// defer self.store.Transact()()
-	// node := self.getNode(path, fh)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	// *stat = node.Stat()
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		node := self.getNode(path, fh)
+		node := self.getNode(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
 		}
-		*stat = node.Stat()
+		*stat = node.Stat(tx)
 		return 0
 	})
 }
 
 func (self *Memfs) Truncate(path string, size int64, fh uint64) (errc int) {
 	defer trace(path, size, fh)(&errc)
-	// defer self.store.Transact()()
-	// node := self.getNode(path, fh)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	//
-	// node.SetData(resize(node.Data(), size, true))
-	// node.StatSetSize(size)
-	//
-	// tmsp := fuse.Now()
-	// node.StatSetCTim(tmsp)
-	// node.StatSetMTim(tmsp)
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		node := self.getNode(path, fh)
+		node := self.getNode(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 
-		node.SetData(resize(node.Data(), size, true))
-		node.StatSetSize(size)
+		node.SetData(tx, resize(node.Data(tx), size, true))
+		node.StatSetSize(tx, size)
 
 		tmsp := fuse.Now()
-		node.StatSetCTim(tmsp)
-		node.StatSetMTim(tmsp)
+		node.StatSetCTim(tx, tmsp)
+		node.StatSetMTim(tx, tmsp)
 		return 0
 	})
 }
 
 func (self *Memfs) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	defer trace(path, buff, ofst, fh)(&n)
-	// defer self.store.Transact()()
-	// node := self.getNode(path, fh)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	// endofst := ofst + int64(len(buff))
-	// if endofst > node.Stat().Size {
-	// 	endofst = node.Stat().Size
-	// }
-	// if endofst < ofst {
-	// 	return 0
-	// }
-	// n = copy(buff, node.Data()[ofst:endofst])
-	// node.StatSetATim(fuse.Now())
-	// return
-
 	return self.store.TxWithInt(func(tx fdb.Transaction) (n int) {
-		node := self.getNode(path, fh)
+		node := self.getNode(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 		endofst := ofst + int64(len(buff))
-		if endofst > node.Stat().Size {
-			endofst = node.Stat().Size
+		if endofst > node.Stat(tx).Size {
+			endofst = node.Stat(tx).Size
 		}
 		if endofst < ofst {
 			return 0
 		}
-		n = copy(buff, node.Data()[ofst:endofst])
-		node.StatSetATim(fuse.Now())
+		n = copy(buff, node.Data(tx)[ofst:endofst])
+		node.StatSetATim(tx, fuse.Now())
 		return
 	})
 }
 
 func (self *Memfs) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 	defer trace(path, buff, ofst, fh)(&n)
-	// defer self.store.Transact()()
-	// node := self.getNode(path, fh)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	// endofst := ofst + int64(len(buff))
-	// if endofst > node.Stat().Size {
-	// 	node.SetData(resize(node.Data(), endofst, true))
-	// 	node.StatSetSize(endofst)
-	// }
-	//
-	// n = copy(node.Data()[ofst:endofst], buff)
-	//
-	// tmsp := fuse.Now()
-	// node.StatSetCTim(tmsp)
-	// node.StatSetMTim(tmsp)
-	// return
-
 	return self.store.TxWithInt(func(tx fdb.Transaction) (n int) {
-		node := self.getNode(path, fh)
+		node := self.getNode(tx, path, fh)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 		endofst := ofst + int64(len(buff))
-		if endofst > node.Stat().Size {
-			node.SetData(resize(node.Data(), endofst, true))
-			node.StatSetSize(endofst)
+		if endofst > node.Stat(tx).Size {
+			node.SetData(tx, resize(node.Data(tx), endofst, true))
+			node.StatSetSize(tx, endofst)
 		}
 
-		n = copy(node.Data()[ofst:endofst], buff)
+		n = copy(node.Data(tx)[ofst:endofst], buff)
 
 		tmsp := fuse.Now()
-		node.StatSetCTim(tmsp)
-		node.StatSetMTim(tmsp)
+		node.StatSetCTim(tx, tmsp)
+		node.StatSetMTim(tx, tmsp)
 		return
 	})
 }
 
 func (self *Memfs) Release(path string, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc)
-	// defer self.store.Transact()()
-	// return self.closeNode(fh)
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		return self.closeNode(fh)
+		return self.closeNode(tx, fh)
 	})
 }
 
 func (self *Memfs) Opendir(path string) (errc int, fh uint64) {
 	defer trace(path)(&errc, &fh)
-	// defer self.store.Transact()()
-	// return self.openNode(path, true)
-
 	return self.store.TxWithErrcUint64(func(tx fdb.Transaction) (int, uint64) {
-		return self.openNode(path, true)
+		return self.openNode(tx, path, true)
 	})
 
 }
@@ -492,31 +317,15 @@ func (self *Memfs) Readdir(path string,
 	ofst int64,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
-	// defer self.store.Transact()()
-	// node := self.openmap[fh]
-	// sta := node.Stat()
-	//
-	// fill(".", &sta, 0)
-	// fill("..", nil, 0)
-	// node.ChldEach(func(name string, chld *nodes.NodeT) (stop bool) {
-	// 	csta := chld.Stat()
-	// 	if !fill(name, &csta, 0) {
-	// 		return true
-	// 	}
-	//
-	// 	return
-	// })
-	//
-	// return 0
 
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		node := self.openmap[fh]
-		sta := node.Stat()
+		sta := node.Stat(tx)
 
 		fill(".", &sta, 0)
 		fill("..", nil, 0)
-		node.ChldEach(func(name string, chld *nodes.NodeT) (stop bool) {
-			csta := chld.Stat()
+		node.ChldEach(tx, func(name string, chld *nodes.NodeT) (stop bool) {
+			csta := chld.Stat(tx)
 			if !fill(name, &csta, 0) {
 				return true
 			}
@@ -530,41 +339,15 @@ func (self *Memfs) Readdir(path string,
 
 func (self *Memfs) Releasedir(path string, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc)
-	// defer self.store.Transact()()
-	// return self.closeNode(fh)
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		return self.closeNode(fh)
+		return self.closeNode(tx, fh)
 	})
 }
 
 func (self *Memfs) Setxattr(path string, name string, value []byte, flags int) (errc int) {
 	defer trace(path, name, value, flags)(&errc)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	// if "com.apple.ResourceFork" == name {
-	// 	return -fuse.ENOTSUP
-	// }
-	// if fuse.XATTR_CREATE == flags {
-	// 	if _, ok := node.XAtrGet(name); ok {
-	// 		return -fuse.EEXIST
-	// 	}
-	// } else if fuse.XATTR_REPLACE == flags {
-	// 	if _, ok := node.XAtrGet(name); !ok {
-	// 		return -fuse.ENOATTR
-	// 	}
-	// }
-	//
-	// xatr := make([]byte, len(value))
-	// copy(xatr, value)
-	// node.XAtrSet(name, xatr)
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
 		}
@@ -572,41 +355,26 @@ func (self *Memfs) Setxattr(path string, name string, value []byte, flags int) (
 			return -fuse.ENOTSUP
 		}
 		if fuse.XATTR_CREATE == flags {
-			if _, ok := node.XAtrGet(name); ok {
+			if _, ok := node.XAtrGet(tx, name); ok {
 				return -fuse.EEXIST
 			}
 		} else if fuse.XATTR_REPLACE == flags {
-			if _, ok := node.XAtrGet(name); !ok {
+			if _, ok := node.XAtrGet(tx, name); !ok {
 				return -fuse.ENOATTR
 			}
 		}
 
 		xatr := make([]byte, len(value))
 		copy(xatr, value)
-		node.XAtrSet(name, xatr)
+		node.XAtrSet(tx, name, xatr)
 		return 0
 	})
 }
 
 func (self *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
 	defer trace(path, name)(&errc, &xatr)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT, nil
-	// }
-	// if "com.apple.ResourceFork" == name {
-	// 	return -fuse.ENOTSUP, nil
-	// }
-	//
-	// xatr, ok := node.XAtrGet(name)
-	// if !ok {
-	// 	return -fuse.ENOATTR, nil
-	// }
-	// return 0, xatr
-
 	return self.store.TxWithErrcBytes(func(tx fdb.Transaction) (int, []byte) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT, nil
 		}
@@ -614,7 +382,7 @@ func (self *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
 			return -fuse.ENOTSUP, nil
 		}
 
-		xatr, ok := node.XAtrGet(name)
+		xatr, ok := node.XAtrGet(tx, name)
 		if !ok {
 			return -fuse.ENOATTR, nil
 		}
@@ -624,24 +392,8 @@ func (self *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
 
 func (self *Memfs) Removexattr(path string, name string) (errc int) {
 	defer trace(path, name)(&errc)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	// if "com.apple.ResourceFork" == name {
-	// 	return -fuse.ENOTSUP
-	// }
-	//
-	// if _, ok := node.XAtrGet(name); !ok {
-	// 	return -fuse.ENOATTR
-	// }
-	//
-	// node.XAtrDel(name)
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
 		}
@@ -649,37 +401,24 @@ func (self *Memfs) Removexattr(path string, name string) (errc int) {
 			return -fuse.ENOTSUP
 		}
 
-		if _, ok := node.XAtrGet(name); !ok {
+		if _, ok := node.XAtrGet(tx, name); !ok {
 			return -fuse.ENOATTR
 		}
 
-		node.XAtrDel(name)
+		node.XAtrDel(tx, name)
 		return 0
 	})
 }
 
 func (self *Memfs) Listxattr(path string, fill func(name string) bool) (errc int) {
 	defer trace(path, fill)(&errc)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	//
-	// return node.XAtrEach(func(name string) int {
-	// 	if !fill(name) {
-	// 		return -fuse.ERANGE
-	// 	}
-	// 	return 0
-	// })
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 
-		return node.XAtrEach(func(name string) int {
+		return node.XAtrEach(tx, func(name string) int {
 			if !fill(name) {
 				return -fuse.ERANGE
 			}
@@ -690,87 +429,48 @@ func (self *Memfs) Listxattr(path string, fill func(name string) bool) (errc int
 
 func (self *Memfs) Chflags(path string, flags uint32) (errc int) {
 	defer trace(path, flags)(&errc)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	//
-	// node.StatSetFlags(flags)
-	// node.StatSetCTim(fuse.Now())
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 
-		node.StatSetFlags(flags)
-		node.StatSetCTim(fuse.Now())
+		node.StatSetFlags(tx, flags)
+		node.StatSetCTim(tx, fuse.Now())
 		return 0
 	})
 }
 
 func (self *Memfs) Setcrtime(path string, tmsp fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	//
-	// node.StatSetBirthTim(tmsp)
-	// node.StatSetCTim(fuse.Now())
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 
-		node.StatSetBirthTim(tmsp)
-		node.StatSetCTim(fuse.Now())
+		node.StatSetBirthTim(tx, tmsp)
+		node.StatSetCTim(tx, fuse.Now())
 		return 0
 	})
 }
 
 func (self *Memfs) Setchgtime(path string, tmsp fuse.Timespec) (errc int) {
 	defer trace(path, tmsp)(&errc)
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	//
-	// node.StatSetCTim(tmsp)
-	// return 0
-	//
-	// defer self.store.Transact()()
-	// _, _, node := self.lookupNode(path, nil)
-	// if nil == node {
-	// 	return -fuse.ENOENT
-	// }
-	//
-	// node.StatSetBirthTim(tmsp)
-	// node.StatSetCTim(fuse.Now())
-	// return 0
-
 	return self.store.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		if nil == node {
 			return -fuse.ENOENT
 		}
 
-		node.StatSetBirthTim(tmsp)
-		node.StatSetCTim(fuse.Now())
+		node.StatSetBirthTim(tx, tmsp)
+		node.StatSetCTim(tx, fuse.Now())
 		return 0
 	})
 }
 
-func (self *Memfs) makeNode(path string, mode uint32, dev uint64, data []byte) int {
-	prnt, name, node := self.lookupNode(path, nil)
+func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev uint64, data []byte) int {
+	prnt, name, node := self.lookupNode(tx, path, nil)
 	if nil == prnt {
 		return -fuse.ENOENT
 	}
@@ -778,96 +478,96 @@ func (self *Memfs) makeNode(path string, mode uint32, dev uint64, data []byte) i
 		return -fuse.EEXIST
 	}
 
-	self.store.IncIno()
+	self.store.IncIno(tx)
 	uid, gid, _ := fuse.Getcontext()
-	node = nodes.NewNode(dev, self.store.Ino(), mode, uid, gid)
+	node = nodes.NewNode(dev, self.store.Ino(tx), mode, uid, gid)
 	if nil != data {
-		node.SetData(make([]byte, len(data)))
-		node.StatSetSize(int64(len(data)))
-		node.CopyData(data)
+		node.SetData(tx, make([]byte, len(data)))
+		node.StatSetSize(tx, int64(len(data)))
+		node.CopyData(tx, data)
 	}
 
-	prnt.SetChld(name, node)
-	prnt.StatSetCTim(node.Stat().Ctim)
-	prnt.StatSetMTim(node.Stat().Ctim)
+	prnt.SetChld(tx, name, node)
+	prnt.StatSetCTim(tx, node.Stat(tx).Ctim)
+	prnt.StatSetMTim(tx, node.Stat(tx).Ctim)
 	return 0
 }
 
-func (self *Memfs) removeNode(path string, dir bool) int {
-	prnt, name, node := self.lookupNode(path, nil)
+func (self *Memfs) removeNode(tx fdb.Transaction, path string, dir bool) int {
+	prnt, name, node := self.lookupNode(tx, path, nil)
 	if nil == node {
 		return -fuse.ENOENT
 	}
-	if !dir && fuse.S_IFDIR == node.Stat().Mode&fuse.S_IFMT {
+	if !dir && fuse.S_IFDIR == node.Stat(tx).Mode&fuse.S_IFMT {
 		return -fuse.EISDIR
 	}
-	if dir && fuse.S_IFDIR != node.Stat().Mode&fuse.S_IFMT {
+	if dir && fuse.S_IFDIR != node.Stat(tx).Mode&fuse.S_IFMT {
 		return -fuse.ENOTDIR
 	}
 
-	if 0 < node.CountChld() {
+	if 0 < node.CountChld(tx) {
 		return -fuse.ENOTEMPTY
 	}
 
-	node.StatDecNlink()
-	prnt.DelChld(name)
+	node.StatDecNlink(tx)
+	prnt.DelChld(tx, name)
 
 	tmsp := fuse.Now()
-	node.StatSetCTim(tmsp)
-	prnt.StatSetCTim(tmsp)
-	prnt.StatSetMTim(tmsp)
+	node.StatSetCTim(tx, tmsp)
+	prnt.StatSetCTim(tx, tmsp)
+	prnt.StatSetMTim(tx, tmsp)
 	return 0
 }
 
-func (self *Memfs) openNode(path string, dir bool) (int, uint64) {
-	_, _, node := self.lookupNode(path, nil)
+func (self *Memfs) openNode(tx fdb.Transaction, path string, dir bool) (int, uint64) {
+	_, _, node := self.lookupNode(tx, path, nil)
 	if nil == node {
 		return -fuse.ENOENT, ^uint64(0)
 	}
-	if !dir && fuse.S_IFDIR == node.Stat().Mode&fuse.S_IFMT {
+	if !dir && fuse.S_IFDIR == node.Stat(tx).Mode&fuse.S_IFMT {
 		return -fuse.EISDIR, ^uint64(0)
 	}
-	if dir && fuse.S_IFDIR != node.Stat().Mode&fuse.S_IFMT {
+	if dir && fuse.S_IFDIR != node.Stat(tx).Mode&fuse.S_IFMT {
 		return -fuse.ENOTDIR, ^uint64(0)
 	}
 
-	node.IncOpencnt()
-	if 1 == node.Opencnt() {
-		self.openmap[node.Stat().Ino] = node
+	node.IncOpencnt(tx)
+	if 1 == node.Opencnt(tx) {
+		self.openmap[node.Stat(tx).Ino] = node
 	}
-	return 0, node.Stat().Ino
+	return 0, node.Stat(tx).Ino
 }
 
-func (self *Memfs) closeNode(fh uint64) int {
+func (self *Memfs) closeNode(tx fdb.Transaction, fh uint64) int {
 	node := self.openmap[fh]
-	node.DecOpencnt()
-	if 0 == node.Opencnt() {
-		delete(self.openmap, node.Stat().Ino)
+	node.DecOpencnt(tx)
+	if 0 == node.Opencnt(tx) {
+		delete(self.openmap, node.Stat(tx).Ino)
 	}
 
 	return 0
 }
 
-func (self *Memfs) getNode(path string, fh uint64) *nodes.NodeT {
+func (self *Memfs) getNode(tx fdb.Transaction, path string, fh uint64) *nodes.NodeT {
 	if ^uint64(0) == fh {
-		_, _, node := self.lookupNode(path, nil)
+		_, _, node := self.lookupNode(tx, path, nil)
 		return node
 	} else {
 		return self.openmap[fh]
 	}
 }
 
-func (self *Memfs) lookupNode(path string, ancestor *nodes.NodeT) (prnt *nodes.NodeT, name string, node *nodes.NodeT) {
-	prnt = self.store.Root()
+func (self *Memfs) lookupNode(tx fdb.Transaction, path string, ancestor *nodes.NodeT) (prnt *nodes.NodeT, name string, node *nodes.NodeT) {
+	prnt = self.store.Root(tx)
 	name = ""
-	node = self.store.Root()
+	node = self.store.Root(tx)
 	for _, c := range split(path) {
 		if "" != c {
 			if 255 < len(c) {
 				panic(fuse.Error(-fuse.ENAMETOOLONG))
 			}
 			prnt, name = node, c
-			node = node.GetChld(name)
+			node = node.GetChld(tx, name)
 			if nil != ancestor && node == ancestor {
 				name = "" // special case loop condition
 				return
