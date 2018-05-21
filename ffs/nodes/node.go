@@ -67,9 +67,7 @@ func (n *NodeT) putUint32At(tx fdb.Transaction, k string, v uint32) {
 }
 
 type node struct {
-	chld    map[string]*NodeT
-	data    []byte
-	opencnt int
+	chld map[string]*NodeT
 }
 
 type NodeT struct {
@@ -95,11 +93,3 @@ func (n *NodeT) Init(tx fdb.Transaction, dev uint64, ino uint64, mode uint32, ui
 		n.no.chld = map[string]*NodeT{}
 	}
 }
-
-func (n *NodeT) Data(tx fdb.Transaction) []byte        { return n.no.data }
-func (n *NodeT) SetData(tx fdb.Transaction, d []byte)  { n.no.data = d }
-func (n *NodeT) CopyData(tx fdb.Transaction, d []byte) { copy(n.no.data, d) }
-
-func (n *NodeT) Opencnt(tx fdb.Transaction) int { return n.no.opencnt }
-func (n *NodeT) IncOpencnt(tx fdb.Transaction)  { n.no.opencnt++ }
-func (n *NodeT) DecOpencnt(tx fdb.Transaction)  { n.no.opencnt-- }
