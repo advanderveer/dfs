@@ -42,6 +42,7 @@ func TestQuickIO(t *testing.T) {
 			mntdir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
 
 			go func() {
+
 				for {
 					fi, err := os.Stat(mntdir)
 					if err == nil && fi.IsDir() {
@@ -49,40 +50,61 @@ func TestQuickIO(t *testing.T) {
 					}
 				}
 
-				//fsx
-				cmd := exec.Command("fsx", "-N", "5000", "test", "xxxxxx")
-				cmd.Dir = mntdir
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				err := cmd.Run()
-				ok(t, err)
-				equals(t, true, cmd.ProcessState.Success())
+				t.Run("test list xattr", func(t *testing.T) {
+					errc := dfs.Setxattr("/", "hello", []byte("bar"), 0)
+					equals(t, 0, errc)
 
-				//fsx (attr)
-				cmd = exec.Command("fsx", "-e", "-N", "100", "test", "xxxxxx")
-				cmd.Dir = mntdir
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				err = cmd.Run()
-				ok(t, err)
-				equals(t, true, cmd.ProcessState.Success())
+					errc, attr := dfs.Getxattr("/", "hello")
+					equals(t, 0, errc)
+					equals(t, []byte("bar"), attr)
 
-				//fstorture
+					var n int
+					equals(t, 0, dfs.Listxattr("/", func(name string) bool {
+						n++
+						equals(t, "hello", name)
+						return true
+					}))
+
+					equals(t, 1, n)
+				})
+
+				t.Run("run fsx", func(t *testing.T) {
+					cmd := exec.Command("fsx", "-N", "5000", "test", "xxxxxx")
+					cmd.Dir = mntdir
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+					err := cmd.Run()
+					ok(t, err)
+					equals(t, true, cmd.ProcessState.Success())
+
+					cmd = exec.Command("fsx", "-e", "-N", "100", "test", "xxxxxx")
+					cmd.Dir = mntdir
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+					err = cmd.Run()
+					ok(t, err)
+					equals(t, true, cmd.ProcessState.Success())
+				})
+
 				dira := filepath.Join(mntdir, "a")
 				err = os.Mkdir(dira, 0777)
 				ok(t, err)
 
-				dirb := filepath.Join(mntdir, "b")
-				err = os.Mkdir(dirb, 0777)
-				ok(t, err)
+				t.Run("run fstorture", func(t *testing.T) {
 
-				cmd = exec.Command("fstorture", dira, dirb, "6", "-c", "30")
-				cmd.Dir = mntdir
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				err = cmd.Run()
-				ok(t, err)
-				equals(t, true, cmd.ProcessState.Success())
+					//fstorture
+					dirb := filepath.Join(mntdir, "b")
+					err = os.Mkdir(dirb, 0777)
+					ok(t, err)
+
+					cmd := exec.Command("fstorture", dira, dirb, "6", "-c", "30")
+					cmd.Dir = mntdir
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+					err = cmd.Run()
+					ok(t, err)
+					equals(t, true, cmd.ProcessState.Success())
+				})
 
 				t.Run("create and read link", func(t *testing.T) {
 					err := os.Symlink(dira, filepath.Join(mntdir, "c"))

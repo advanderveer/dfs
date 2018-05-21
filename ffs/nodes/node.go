@@ -10,6 +10,8 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
+var endianess = binary.LittleEndian
+
 func (n *NodeT) putTimeSpec(tx fdb.Transaction, k string, ts fuse.Timespec) {
 	buf, _ := ts.Time().MarshalBinary()
 	tx.Set(n.ss.Pack(tuple.Tuple{k}), buf)
@@ -40,12 +42,12 @@ func (n *NodeT) getUint64At(tx fdb.Transaction, k string) (v uint64) {
 		return 0
 	}
 
-	return binary.LittleEndian.Uint64(d)
+	return endianess.Uint64(d)
 }
 
 func (n *NodeT) putUint64At(tx fdb.Transaction, k string, v uint64) {
 	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, v)
+	endianess.PutUint64(b, v)
 	tx.Set(n.ss.Pack(tuple.Tuple{k}), b)
 }
 
@@ -55,25 +57,25 @@ func (n *NodeT) getUint32At(tx fdb.Transaction, k string) (v uint32) {
 		return 0
 	}
 
-	return binary.LittleEndian.Uint32(d)
+	return endianess.Uint32(d)
 }
 
 func (n *NodeT) putUint32At(tx fdb.Transaction, k string, v uint32) {
 	b := make([]byte, 4)
-	binary.LittleEndian.PutUint32(b, v)
+	endianess.PutUint32(b, v)
 	tx.Set(n.ss.Pack(tuple.Tuple{k}), b)
 }
 
 type node struct {
-	xatr    map[string][]byte
 	chld    map[string]*NodeT
 	data    []byte
 	opencnt int
 }
 
 type NodeT struct {
-	ss subspace.Subspace
-	no node
+	sss subspace.Subspace
+	ss  subspace.Subspace
+	no  node
 }
 
 func (n *NodeT) Init(tx fdb.Transaction, dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) {

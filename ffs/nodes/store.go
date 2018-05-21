@@ -34,7 +34,10 @@ func NewStore(tr fdb.Transactor, ss fdbdir.DirectorySubspace) *Store {
 }
 
 func (store *Store) NewNode(tx fdb.Transaction, dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *NodeT {
-	node := NodeT{ss: store.ss.Sub(int64(ino))}
+	node := NodeT{
+		sss: store.ss,
+		ss:  store.ss.Sub(int64(ino)),
+	}
 	node.Init(tx, dev, ino, mode, uid, gid)
 	return &node
 }

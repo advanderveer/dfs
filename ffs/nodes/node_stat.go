@@ -5,9 +5,12 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
+func (n *NodeT) statGetIno(tx fdb.Transaction) (ino uint64) { return n.getUint64At(tx, "ino") }
+
+//@TODO can we reduce the number of reads if we do not need the whol state
 func (n *NodeT) Stat(tx fdb.Transaction) fuse.Stat_t {
 	sta := fuse.Stat_t{}
-	sta.Ino = n.getUint64At(tx, "ino")
+	sta.Ino = n.statGetIno(tx)
 	sta.Dev = n.getUint64At(tx, "dev")
 	sta.Mode = n.getUint32At(tx, "mode")
 	sta.Uid = n.getUint32At(tx, "uid")
