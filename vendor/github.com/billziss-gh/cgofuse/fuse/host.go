@@ -15,9 +15,13 @@ package fuse
 /*
 #cgo darwin CFLAGS: -DFUSE_USE_VERSION=28 -D_FILE_OFFSET_BITS=64 -I/usr/local/include/osxfuse/fuse
 #cgo darwin LDFLAGS: -L/usr/local/lib -losxfuse
+
 #cgo linux CFLAGS: -DFUSE_USE_VERSION=28 -D_FILE_OFFSET_BITS=64 -I/usr/include/fuse
 #cgo linux LDFLAGS: -lfuse
-#cgo windows CFLAGS: -D_WIN32_WINNT=0x0600 -DFUSE_USE_VERSION=28
+
+// Use `set CPATH=C:\Program Files (x86)\WinFsp\inc\fuse` on Windows.
+// The flag `I/usr/local/include/winfsp` only works on xgo and docker.
+#cgo windows CFLAGS: -DFUSE_USE_VERSION=28 -I/usr/local/include/winfsp
 
 #if !(defined(__APPLE__) || defined(__linux__) || defined(_WIN32))
 #error platform not supported
@@ -42,8 +46,9 @@ static PVOID cgofuse_init_slow(int hardfail);
 static VOID  cgofuse_init_fail(VOID);
 static PVOID cgofuse_init_winfsp(VOID);
 
-static SRWLOCK cgofuse_lock = SRWLOCK_INIT;
+static CRITICAL_SECTION cgofuse_lock;
 static PVOID cgofuse_module = 0;
+static BOOLEAN cgofuse_stat_ex = FALSE;
 
 static inline PVOID cgofuse_init_fast(int hardfail)
 {
@@ -57,7 +62,7 @@ static inline PVOID cgofuse_init_fast(int hardfail)
 static PVOID cgofuse_init_slow(int hardfail)
 {
 	PVOID Module;
-	AcquireSRWLockExclusive(&cgofuse_lock);
+	EnterCriticalSection(&cgofuse_lock);
 	Module = cgofuse_module;
 	if (0 == Module)
 	{
@@ -65,7 +70,7 @@ static PVOID cgofuse_init_slow(int hardfail)
 		MemoryBarrier();
 		cgofuse_module = Module;
 	}
-	ReleaseSRWLockExclusive(&cgofuse_lock);
+	LeaveCriticalSection(&cgofuse_lock);
 	if (0 == Module && hardfail)
 		cgofuse_init_fail();
 	return Module;
@@ -96,20 +101,9 @@ static NTSTATUS FspLoad(PVOID *PModule)
 #endif
 #define FSP_DLLPATH                     "bin\\" FSP_DLLNAME
 
-	WINADVAPI
-	LSTATUS
-	APIENTRY
-	RegGetValueW(
-		HKEY hkey,
-		LPCWSTR lpSubKey,
-		LPCWSTR lpValue,
-		DWORD dwFlags,
-		LPDWORD pdwType,
-		PVOID pvData,
-		LPDWORD pcbData);
-
 	WCHAR PathBuf[MAX_PATH];
 	DWORD Size;
+	DWORD RegType;
 	HKEY RegKey;
 	LONG Result;
 	HMODULE Module;
@@ -125,14 +119,20 @@ static NTSTATUS FspLoad(PVOID *PModule)
 		if (ERROR_SUCCESS == Result)
 		{
 			Size = sizeof PathBuf - sizeof L"" FSP_DLLPATH + sizeof(WCHAR);
-			Result = RegGetValueW(RegKey, 0, L"InstallDir",
-				RRF_RT_REG_SZ, 0, PathBuf, &Size);
+			Result = RegQueryValueExW(RegKey, L"InstallDir", 0,
+				&RegType, (LPBYTE)PathBuf, &Size);
 			RegCloseKey(RegKey);
+			if (ERROR_SUCCESS == Result && REG_SZ != RegType)
+				Result = ERROR_FILE_NOT_FOUND;
 		}
 		if (ERROR_SUCCESS != Result)
 			return 0xC0000034;//STATUS_OBJECT_NAME_NOT_FOUND
 
-		RtlCopyMemory(PathBuf + (Size / sizeof(WCHAR) - 1), L"" FSP_DLLPATH, sizeof L"" FSP_DLLPATH);
+		if (0 < Size && L'\0' == PathBuf[Size / sizeof(WCHAR) - 1])
+			Size -= sizeof(WCHAR);
+
+		RtlCopyMemory(PathBuf + Size / sizeof(WCHAR),
+			L"" FSP_DLLPATH, sizeof L"" FSP_DLLPATH);
 		Module = LoadLibraryW(PathBuf);
 		if (0 == Module)
 			return 0xC0000135;//STATUS_DLL_NOT_FOUND
@@ -200,10 +200,12 @@ typedef dev_t fuse_dev_t;
 typedef uid_t fuse_uid_t;
 typedef gid_t fuse_gid_t;
 typedef off_t fuse_off_t;
+typedef unsigned long fuse_opt_offset_t;
 #elif defined(_WIN32)
 typedef struct fuse_stat fuse_stat_t;
 typedef struct fuse_statvfs fuse_statvfs_t;
 typedef struct fuse_timespec fuse_timespec_t;
+typedef unsigned int fuse_opt_offset_t;
 #endif
 
 extern int hostGetattr(char *path, fuse_stat_t *stbuf);
@@ -244,6 +246,9 @@ extern int hostFtruncate(char *path, fuse_off_t off, struct fuse_file_info *fi);
 extern int hostFgetattr(char *path, fuse_stat_t *stbuf, struct fuse_file_info *fi);
 //extern int hostLock(char *path, struct fuse_file_info *fi, int cmd, struct fuse_flock *lock);
 extern int hostUtimens(char *path, fuse_timespec_t tv[2]);
+extern int hostSetchgtime(char *path, fuse_timespec_t *tv);
+extern int hostSetcrtime(char *path, fuse_timespec_t *tv);
+extern int hostChflags(char *path, uint32_t flags);
 
 static inline void hostAsgnCconninfo(struct fuse_conn_info *conn,
 	bool capCaseInsensitive,
@@ -254,6 +259,10 @@ static inline void hostAsgnCconninfo(struct fuse_conn_info *conn,
 		FUSE_ENABLE_CASE_INSENSITIVE(conn);
 #elif defined(__linux__)
 #elif defined(_WIN32)
+#if defined(FSP_FUSE_CAP_STAT_EX)
+	conn->want |= conn->capable & FSP_FUSE_CAP_STAT_EX;
+	cgofuse_stat_ex = 0 != (conn->want & FSP_FUSE_CAP_STAT_EX); // hack!
+#endif
 	if (capCaseInsensitive)
 		conn->want |= conn->capable & FSP_FUSE_CAP_CASE_INSENSITIVE;
 	if (capReaddirPlus)
@@ -302,7 +311,8 @@ static inline void hostCstatFromFusestat(fuse_stat_t *stbuf,
 	int64_t ctimSec, int64_t ctimNsec,
 	int64_t blksize,
 	int64_t blocks,
-	int64_t birthtimSec, int64_t birthtimNsec)
+	int64_t birthtimSec, int64_t birthtimNsec,
+	uint32_t flags)
 {
 	memset(stbuf, 0, sizeof *stbuf);
 	stbuf->st_dev = dev;
@@ -313,18 +323,46 @@ static inline void hostCstatFromFusestat(fuse_stat_t *stbuf,
 	stbuf->st_gid = gid;
 	stbuf->st_rdev = rdev;
 	stbuf->st_size = size;
+	stbuf->st_blksize = blksize;
+	stbuf->st_blocks = blocks;
 #if defined(__APPLE__)
 	stbuf->st_atimespec.tv_sec = atimSec; stbuf->st_atimespec.tv_nsec = atimNsec;
 	stbuf->st_mtimespec.tv_sec = mtimSec; stbuf->st_mtimespec.tv_nsec = mtimNsec;
 	stbuf->st_ctimespec.tv_sec = ctimSec; stbuf->st_ctimespec.tv_nsec = ctimNsec;
-	stbuf->st_birthtimespec.tv_sec = birthtimSec; stbuf->st_birthtimespec.tv_nsec = birthtimNsec;
+	if (0 != birthtimSec)
+	{
+		stbuf->st_birthtimespec.tv_sec = birthtimSec;
+		stbuf->st_birthtimespec.tv_nsec = birthtimNsec;
+	}
+	else
+	{
+		stbuf->st_birthtimespec.tv_sec = ctimSec;
+		stbuf->st_birthtimespec.tv_nsec = ctimNsec;
+	}
+	stbuf->st_flags = flags;
+#elif defined(_WIN32)
+	stbuf->st_atim.tv_sec = atimSec; stbuf->st_atim.tv_nsec = atimNsec;
+	stbuf->st_mtim.tv_sec = mtimSec; stbuf->st_mtim.tv_nsec = mtimNsec;
+	stbuf->st_ctim.tv_sec = ctimSec; stbuf->st_ctim.tv_nsec = ctimNsec;
+	if (0 != birthtimSec)
+	{
+		stbuf->st_birthtim.tv_sec = birthtimSec;
+		stbuf->st_birthtim.tv_nsec = birthtimNsec;
+	}
+	else
+	{
+		stbuf->st_birthtim.tv_sec = ctimSec;
+		stbuf->st_birthtim.tv_nsec = ctimNsec;
+	}
+#if defined(FSP_FUSE_CAP_STAT_EX)
+	if (cgofuse_stat_ex)
+		((struct fuse_stat_ex *)stbuf)->st_flags = flags;
+#endif
 #else
 	stbuf->st_atim.tv_sec = atimSec; stbuf->st_atim.tv_nsec = atimNsec;
 	stbuf->st_mtim.tv_sec = mtimSec; stbuf->st_mtim.tv_nsec = mtimNsec;
 	stbuf->st_ctim.tv_sec = ctimSec; stbuf->st_ctim.tv_nsec = ctimNsec;
 #endif
-	stbuf->st_blksize = blksize;
-	stbuf->st_blocks = blocks;
 }
 
 static inline int hostFilldir(fuse_fill_dir_t filler, void *buf,
@@ -351,7 +389,22 @@ static int _hostGetxattr(char *path, char *name, char *value, size_t size,
 #define _hostGetxattr hostGetxattr
 #endif
 
-static int hostInitializeFuse(void)
+// hostStaticInit, hostFuseInit and hostInit serve different purposes.
+//
+// hostStaticInit and hostFuseInit are needed to provide static and dynamic initialization
+// of the FUSE layer. This is currently useful on Windows only.
+//
+// hostInit is simply the .init implementation of struct fuse_operations.
+
+static void hostStaticInit(void)
+{
+#if defined(__APPLE__) || defined(__linux__)
+#elif defined(_WIN32)
+	InitializeCriticalSection(&cgofuse_lock);
+#endif
+}
+
+static int hostFuseInit(void)
 {
 #if defined(__APPLE__) || defined(__linux__)
 	return 1;
@@ -435,6 +488,11 @@ static int hostMount(int argc, char *argv[], void *data)
 		.fgetattr = (int (*)())hostFgetattr,
 		//.lock = (int (*)())hostFlock,
 		.utimens = (int (*)())hostUtimens,
+#if defined(__APPLE__) || (defined(_WIN32) && defined(FSP_FUSE_CAP_STAT_EX))
+		.setchgtime = (int (*)())hostSetchgtime,
+		.setcrtime = (int (*)())hostSetcrtime,
+		.chflags = (int (*)())hostChflags,
+#endif
 	};
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -476,12 +534,32 @@ static int hostUnmount(struct fuse *fuse, char *mountpoint)
 	return 1;
 #endif
 }
+
+static int hostOptParseOptProc(void *opt_data, const char *arg, int key,
+	struct fuse_args *outargs)
+{
+	switch (key)
+	{
+	default:
+		return 0;
+	case FUSE_OPT_KEY_NONOPT:
+		return 1;
+	}
+}
+
+static int hostOptParse(struct fuse_args *args, void *data, const struct fuse_opt opts[],
+	bool nonopts)
+{
+	return fuse_opt_parse(args, data, opts, nonopts ? hostOptParseOptProc : 0);
+}
 */
 import "C"
 import (
+	"errors"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -560,7 +638,8 @@ func copyCstatFromFusestat(dst *C.fuse_stat_t, src *Stat_t) {
 		C.int64_t(src.Ctim.Sec), C.int64_t(src.Ctim.Nsec),
 		C.int64_t(src.Blksize),
 		C.int64_t(src.Blocks),
-		C.int64_t(src.Birthtim.Sec), C.int64_t(src.Birthtim.Nsec))
+		C.int64_t(src.Birthtim.Sec), C.int64_t(src.Birthtim.Nsec),
+		C.uint32_t(src.Flags))
 }
 
 func copyFusetimespecFromCtimespec(dst *Timespec, src *C.fuse_timespec_t) {
@@ -907,7 +986,7 @@ func hostInit(conn0 *C.struct_fuse_conn_info) (user_data unsafe.Pointer) {
 		C.bool(host.capCaseInsensitive),
 		C.bool(host.capReaddirPlus))
 	if nil != host.sigc {
-		signal.Notify(host.sigc, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+		signal.Notify(host.sigc, syscall.SIGINT, syscall.SIGTERM)
 	}
 	host.fsop.Init()
 	return
@@ -988,6 +1067,52 @@ func hostUtimens(path0 *C.char, tmsp0 *C.fuse_timespec_t) (errc0 C.int) {
 	}
 }
 
+//export hostSetchgtime
+func hostSetchgtime(path0 *C.char, tmsp0 *C.fuse_timespec_t) (errc0 C.int) {
+	defer recoverAsErrno(&errc0)
+	fsop := hostHandleGet(C.fuse_get_context().private_data).fsop
+	intf, ok := fsop.(FileSystemSetchgtime)
+	if !ok {
+		// say we did it!
+		return 0
+	}
+	path := C.GoString(path0)
+	tmsp := Timespec{}
+	copyFusetimespecFromCtimespec(&tmsp, tmsp0)
+	errc := intf.Setchgtime(path, tmsp)
+	return C.int(errc)
+}
+
+//export hostSetcrtime
+func hostSetcrtime(path0 *C.char, tmsp0 *C.fuse_timespec_t) (errc0 C.int) {
+	defer recoverAsErrno(&errc0)
+	fsop := hostHandleGet(C.fuse_get_context().private_data).fsop
+	intf, ok := fsop.(FileSystemSetcrtime)
+	if !ok {
+		// say we did it!
+		return 0
+	}
+	path := C.GoString(path0)
+	tmsp := Timespec{}
+	copyFusetimespecFromCtimespec(&tmsp, tmsp0)
+	errc := intf.Setcrtime(path, tmsp)
+	return C.int(errc)
+}
+
+//export hostChflags
+func hostChflags(path0 *C.char, flags C.uint32_t) (errc0 C.int) {
+	defer recoverAsErrno(&errc0)
+	fsop := hostHandleGet(C.fuse_get_context().private_data).fsop
+	intf, ok := fsop.(FileSystemChflags)
+	if !ok {
+		// say we did it!
+		return 0
+	}
+	path := C.GoString(path0)
+	errc := intf.Chflags(path, uint32(flags))
+	return C.int(errc)
+}
+
 // NewFileSystemHost creates a file system host.
 func NewFileSystemHost(fsop FileSystemInterface) *FileSystemHost {
 	host := &FileSystemHost{}
@@ -1023,11 +1148,8 @@ func (host *FileSystemHost) SetCapReaddirPlus(value bool) {
 // It is allowed for the mountpoint to be the empty string ("") in which case opts is assumed
 // to contain the mountpoint. It is also allowed for opts to be nil, although in this case the
 // mountpoint must be non-empty.
-//
-// The file system is considered mounted only after its Init() method has been called
-// and before its Destroy() method has been called.
 func (host *FileSystemHost) Mount(mountpoint string, opts []string) bool {
-	if 0 == C.hostInitializeFuse() {
+	if 0 == C.hostFuseInit() {
 		panic("cgofuse: cannot find winfsp")
 	}
 
@@ -1126,4 +1248,251 @@ func Getcontext() (uid uint32, gid uint32, pid int) {
 	gid = uint32(C.fuse_get_context().gid)
 	pid = int(C.fuse_get_context().pid)
 	return
+}
+
+func optNormBool(opt string) string {
+	if i := strings.Index(opt, "=%"); -1 != i {
+		switch opt[i+2:] {
+		case "d", "o", "x", "X":
+			return opt
+		case "v":
+			return opt[:i+1]
+		default:
+			panic("unknown format " + opt[i+1:])
+		}
+	} else {
+		return opt
+	}
+}
+
+func optNormInt(opt string, modf string) string {
+	if i := strings.Index(opt, "=%"); -1 != i {
+		switch opt[i+2:] {
+		case "d", "o", "x", "X":
+			return opt[:i+2] + modf + opt[i+2:]
+		case "v":
+			return opt[:i+2] + modf + "i"
+		default:
+			panic("unknown format " + opt[i+1:])
+		}
+	} else if strings.HasSuffix(opt, "=") {
+		return opt + "%" + modf + "i"
+	} else {
+		return opt + "=%" + modf + "i"
+	}
+}
+
+func optNormStr(opt string) string {
+	if i := strings.Index(opt, "=%"); -1 != i {
+		switch opt[i+2:] {
+		case "s", "v":
+			return opt[:i+2] + "s"
+		default:
+			panic("unknown format " + opt[i+1:])
+		}
+	} else if strings.HasSuffix(opt, "=") {
+		return opt + "%s"
+	} else {
+		return opt + "=%s"
+	}
+}
+
+// OptParse parses the FUSE command line arguments in args as determined by format
+// and stores the resulting values in vals, which must be pointers. It returns a
+// list of unparsed arguments or nil if an error happens.
+//
+// The format may be empty or non-empty. An empty format is taken as a special
+// instruction to OptParse to only return all non-option arguments in outargs.
+//
+// A non-empty format is a space separated list of acceptable FUSE options. Each
+// option is matched with a corresponding pointer value in vals. The combination
+// of the option and the type of the corresponding pointer value, determines how
+// the option is used. The allowed pointer types are pointer to bool, pointer to
+// an integer type and pointer to string.
+//
+// For pointer to bool types:
+//
+//     -x                       Match -x without parameter.
+//     -foo --foo               As above for -foo or --foo.
+//     foo                      Match "-o foo".
+//     -x= -foo= --foo= foo=    Match option with parameter.
+//     -x=%VERB ... foo=%VERB   Match option with parameter of syntax.
+//                              Allowed verbs: d,o,x,X,v
+//                              - d,o,x,X: set to true if parameter non-0.
+//                              - v: set to true if parameter present.
+//
+//     The formats -x=, and -x=%v are equivalent.
+//
+// For pointer to other types:
+//
+//     -x                       Match -x with parameter (-x=PARAM).
+//     -foo --foo               As above for -foo or --foo.
+//     foo                      Match "-o foo=PARAM".
+//     -x= -foo= --foo= foo=    Match option with parameter.
+//     -x=%VERB ... foo=%VERB   Match option with parameter of syntax.
+//                              Allowed verbs for pointer to int types: d,o,x,X,v
+//                              Allowed verbs for pointer to string types: s,v
+//
+//     The formats -x, -x=, and -x=%v are equivalent.
+//
+// For example:
+//
+//     var f bool
+//     var set_attr_timeout bool
+//     var attr_timeout int
+//     var umask uint32
+//     outargs, err := OptParse(args, "-f attr_timeout= attr_timeout umask=%o",
+//         &f, &set_attr_timeout, &attr_timeout, &umask)
+//
+// Will accept a command line of:
+//
+//     $ program -f -o attr_timeout=42,umask=077
+//
+// And will set variables as follows:
+//
+//     f == true
+//     set_attr_timeout == true
+//     attr_timeout == 42
+//     umask == 077
+//
+func OptParse(args []string, format string, vals ...interface{}) (outargs []string, err error) {
+	if 0 == C.hostFuseInit() {
+		panic("cgofuse: cannot find winfsp")
+	}
+
+	defer func() {
+		if r := recover(); nil != r {
+			if s, ok := r.(string); ok {
+				outargs = nil
+				err = errors.New("OptParse: " + s)
+			} else {
+				panic(r)
+			}
+		}
+	}()
+
+	var opts []string
+	var nonopts bool
+	if "" == format {
+		opts = make([]string, 0)
+		nonopts = true
+	} else {
+		opts = strings.Split(format, " ")
+	}
+
+	align := int(2 * unsafe.Sizeof(C.size_t(0))) // match malloc alignment (usually 8 or 16)
+
+	fuse_opts := make([]C.struct_fuse_opt, len(opts)+1)
+	for i := 0; len(opts) > i; i++ {
+		switch vals[i].(type) {
+		case *bool:
+			fuse_opts[i].templ = C.CString(optNormBool(opts[i]))
+		case *int:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], ""))
+		case *int8:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], "hh"))
+		case *int16:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], "h"))
+		case *int32:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], ""))
+		case *int64:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], "ll"))
+		case *uint:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], ""))
+		case *uint8:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], "hh"))
+		case *uint16:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], "h"))
+		case *uint32:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], ""))
+		case *uint64:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], "ll"))
+		case *uintptr:
+			fuse_opts[i].templ = C.CString(optNormInt(opts[i], "ll"))
+		case *string:
+			fuse_opts[i].templ = C.CString(optNormStr(opts[i]))
+		}
+		defer C.free(unsafe.Pointer(fuse_opts[i].templ))
+
+		// Work around Go pre-1.10 limitation. See golang issue:
+		// https://github.com/golang/go/issues/21809
+		*(*C.fuse_opt_offset_t)(unsafe.Pointer(&fuse_opts[i].offset)) =
+			C.fuse_opt_offset_t(i * align)
+
+		fuse_opts[i].value = 1
+	}
+
+	fuse_args := C.struct_fuse_args{}
+	defer C.fuse_opt_free_args(&fuse_args)
+	argc := 1 + len(args)
+	argp := C.calloc(C.size_t(argc+1), C.size_t(unsafe.Sizeof((*C.char)(nil))))
+	defer C.free(argp)
+	argv := (*[1 << 16]*C.char)(argp)
+	argv[0] = C.CString("<UNKNOWN>")
+	defer C.free(unsafe.Pointer(argv[0]))
+	for i := 0; len(args) > i; i++ {
+		argv[1+i] = C.CString(args[i])
+		defer C.free(unsafe.Pointer(argv[1+i]))
+	}
+	fuse_args.argc = C.int(argc)
+	fuse_args.argv = (**C.char)(&argv[0])
+
+	data := C.calloc(C.size_t(len(opts)), C.size_t(align))
+	defer C.free(data)
+
+	if -1 == C.hostOptParse(&fuse_args, data, &fuse_opts[0], C.bool(nonopts)) {
+		panic("failed")
+	}
+
+	for i := 0; len(opts) > i; i++ {
+		switch v := vals[i].(type) {
+		case *bool:
+			*v = 0 != int(*(*C.int)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *int:
+			*v = int(*(*C.int)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *int8:
+			*v = int8(*(*C.int8_t)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *int16:
+			*v = int16(*(*C.int16_t)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *int32:
+			*v = int32(*(*C.int32_t)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *int64:
+			*v = int64(*(*C.int64_t)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *uint:
+			*v = uint(*(*C.unsigned)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *uint8:
+			*v = uint8(*(*C.uint8_t)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *uint16:
+			*v = uint16(*(*C.uint16_t)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *uint32:
+			*v = uint32(*(*C.uint32_t)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *uint64:
+			*v = uint64(*(*C.uint64_t)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *uintptr:
+			*v = uintptr(*(*C.uintptr_t)(unsafe.Pointer(uintptr(data) + uintptr(i*align))))
+		case *string:
+			s := *(**C.char)(unsafe.Pointer(uintptr(data) + uintptr(i*align)))
+			*v = C.GoString(s)
+			C.free(unsafe.Pointer(s))
+		}
+	}
+
+	if 1 >= fuse_args.argc {
+		outargs = make([]string, 0)
+	} else {
+		outargs = make([]string, fuse_args.argc-1)
+		for i := 1; int(fuse_args.argc) > i; i++ {
+			outargs[i-1] = C.GoString((*[1 << 16]*C.char)(unsafe.Pointer(fuse_args.argv))[i])
+		}
+	}
+
+	if nonopts && 1 <= len(outargs) && "--" == outargs[0] {
+		outargs = outargs[1:]
+	}
+
+	return
+}
+
+func init() {
+	C.hostStaticInit()
 }

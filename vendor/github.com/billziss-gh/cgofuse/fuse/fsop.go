@@ -12,10 +12,15 @@
 
 // Package fuse allows the creation of user mode file systems in Go.
 //
-// A user mode file system must implement the methods in FileSystemInterface
-// and be hosted (mounted) by a FileSystemHost.
-// Alternatively a user mode file system can use the FileSystemBase struct which
-// provides default implementations of the methods in FileSystemInterface.
+// A user mode file system is a user mode process that receives file system operations
+// from the OS FUSE layer and satisfies them in user mode. A user mode file system
+// implements the interface FileSystemInterface either directly or by embedding a
+// FileSystemBase struct which provides a default (empty) implementation of all methods
+// in FileSystemInterface.
+//
+// In order to expose the user mode file system to the OS, the file system must be hosted
+// (mounted) by a FileSystemHost. The FileSystemHost Mount() method is used for this
+// purpose.
 package fuse
 
 /*
@@ -139,9 +144,11 @@ package fuse
 import "C"
 import (
 	"strconv"
+	"sync"
 	"time"
 )
 
+// Error codes reported by FUSE file systems.
 const (
 	E2BIG           = int(C.E2BIG)
 	EACCES          = int(C.EACCES)
@@ -224,6 +231,7 @@ const (
 	EXDEV           = int(C.EXDEV)
 )
 
+// Flags used in FileSystemInterface.Create and FileSystemInterface.Open.
 const (
 	O_RDONLY  = int(C.O_RDONLY)
 	O_WRONLY  = int(C.O_WRONLY)
@@ -235,6 +243,7 @@ const (
 	O_ACCMODE = int(C.O_ACCMODE)
 )
 
+// File type and permission bits.
 const (
 	S_IFMT   = 0170000
 	S_IFBLK  = 0060000
@@ -262,6 +271,15 @@ const (
 	S_ISVTX = 01000
 )
 
+// BSD file flags (Windows file attributes).
+const (
+	UF_HIDDEN   = 0x00008000
+	UF_READONLY = 0x00001000
+	UF_SYSTEM   = 0x00000080
+	UF_ARCHIVE  = 0x00000800
+)
+
+// Options that control Setxattr operation.
 const (
 	XATTR_CREATE  = int(C.XATTR_CREATE)
 	XATTR_REPLACE = int(C.XATTR_REPLACE)
@@ -327,7 +345,7 @@ type Statfs_t struct {
 	Namemax uint64
 }
 
-// Stat contains file metadata information.
+// Stat_t contains file metadata information.
 // This structure is analogous to the POSIX struct stat.
 // Not all fields are honored by all FUSE implementations.
 type Stat_t struct {
@@ -372,22 +390,56 @@ type Stat_t struct {
 	// Number of blocks allocated for this object.
 	Blocks int64
 
-	// File creation (birth) timestamp. [OSX only]
+	// File creation (birth) timestamp. [OSX and Windows only]
 	Birthtim Timespec
+
+	// BSD flags (UF_*). [OSX and Windows only]
+	Flags uint32
 }
 
-// FileSystemInterface is the interface that all file systems must implement.
-// The file system will receive an Init() call when it is mounted and a Destroy()
-// call when it is unmounted (note that depending on how the file system is
-// terminated the file system may not receive the Destroy() call). All other
-// operations must return 0 on success or a FUSE error on failure. To return an
-// error return the NEGATIVE value of a particular error.  For example, to report
-// "file not found" return -fuse.ENOENT.
+/*
+// Lock_t contains file locking information.
+// This structure is analogous to the POSIX struct flock.
+type Lock_t struct {
+	// Type of lock; F_RDLCK, F_WRLCK, F_UNLCK.
+	Type int16
+
+	// Flag for starting offset.
+	Whence int16
+
+	// Relative offset in bytes.
+	Start int64
+
+	// Size; if 0 then until EOF.
+	Len int64
+
+	// Process ID of the process holding the lock
+	Pid int
+}
+*/
+
+// FileSystemInterface is the interface that a user mode file system must implement.
+//
+// The file system will receive an Init() call when the file system is created;
+// the Init() call will happen prior to receiving any other file system calls.
+// Note that there are no guarantees on the exact timing of when Init() is called.
+// For example, it cannot be assumed that the file system is mounted at the time
+// the Init() call is received.
+//
+// The file system will receive a Destroy() call when the file system is destroyed;
+// the Destroy() call will always be the last call to be received by the file system.
+// Note that depending on how the file system is terminated the file system may not
+// receive the Destroy() call. For example, it will not receive the Destroy() call
+// if the file system process is forcibly killed.
+//
+// Except for Init() and Destroy() all file system operations must return 0 on success
+// or a FUSE error on failure. To return an error return the NEGATIVE value of a
+// particular error.  For example, to report "file not found" return -fuse.ENOENT.
 type FileSystemInterface interface {
-	// Init is called when the file system is mounted.
+	// Init is called when the file system is created.
 	Init()
 
-	// Destroy is called when the file system is unmounted.
+	// Destroy is called when the file system is destroyed.
 	Destroy()
 
 	// Statfs gets file system statistics.
@@ -430,9 +482,11 @@ type FileSystemInterface interface {
 	Access(path string, mask uint32) int
 
 	// Create creates and opens a file.
+	// The flags are a combination of the fuse.O_* constants.
 	Create(path string, flags int, mode uint32) (int, uint64)
 
 	// Open opens a file.
+	// The flags are a combination of the fuse.O_* constants.
 	Open(path string, flags int) (int, uint64)
 
 	// Getattr gets file attributes.
@@ -456,7 +510,8 @@ type FileSystemInterface interface {
 	// Fsync synchronizes file contents.
 	Fsync(path string, datasync bool, fh uint64) int
 
-	//Lock(path string, fh uint64, cmd int, lock Flock_t) int
+	// Lock performs a file locking operation.
+	//Lock(path string, cmd int, lock *Lock_t, fh uint64) int
 
 	// Opendir opens a directory.
 	Opendir(path string) (int, uint64)
@@ -486,14 +541,60 @@ type FileSystemInterface interface {
 	Listxattr(path string, fill func(name string) bool) int
 }
 
+// FileSystemChflags is the interface that wraps the Chflags method.
+//
+// Chflags changes the BSD file flags (Windows file attributes). [OSX and Windows only]
+type FileSystemChflags interface {
+	Chflags(path string, flags uint32) int
+}
+
+// FileSystemSetcrtime is the interface that wraps the Setcrtime method.
+//
+// Setcrtime changes the file creation (birth) time. [OSX and Windows only]
+type FileSystemSetcrtime interface {
+	Setcrtime(path string, tmsp Timespec) int
+}
+
+// FileSystemSetchgtime is the interface that wraps the Setchgtime method.
+//
+// Setchgtime changes the file change (ctime) time. [OSX and Windows only]
+type FileSystemSetchgtime interface {
+	Setchgtime(path string, tmsp Timespec) int
+}
+
 // Error encapsulates a FUSE error code. In some rare circumstances it is useful
 // to signal an error to the FUSE layer by boxing the error code using Error and
 // calling panic(). The FUSE layer will recover and report the boxed error code
 // to the OS.
 type Error int
 
+var errorStringMap map[Error]string
+var errorStringOnce sync.Once
+
 func (self Error) Error() string {
-	return "fuse.Error(" + strconv.Itoa(int(self)) + ")"
+	errorStringOnce.Do(func() {
+		errorStringMap = make(map[Error]string)
+		for _, i := range errorStrings {
+			errorStringMap[Error(-i.errc)] = i.errs
+		}
+	})
+
+	if 0 <= self {
+		return strconv.Itoa(int(self))
+	} else {
+		if errs, ok := errorStringMap[self]; ok {
+			return "-fuse." + errs
+		}
+		return "fuse.Error(" + strconv.Itoa(int(self)) + ")"
+	}
+}
+
+func (self Error) String() string {
+	return self.Error()
+}
+
+func (self Error) GoString() string {
+	return self.Error()
 }
 
 var _ error = (*Error)(nil)
@@ -504,12 +605,12 @@ var _ error = (*Error)(nil)
 type FileSystemBase struct {
 }
 
-// Init is called when the file system is mounted.
+// Init is called when the file system is created.
 // The FileSystemBase implementation does nothing.
 func (*FileSystemBase) Init() {
 }
 
-// Destroy is called when the file system is unmounted.
+// Destroy is called when the file system is destroyed.
 // The FileSystemBase implementation does nothing.
 func (*FileSystemBase) Destroy() {
 }
@@ -593,12 +694,14 @@ func (*FileSystemBase) Access(path string, mask uint32) int {
 }
 
 // Create creates and opens a file.
+// The flags are a combination of the fuse.O_* constants.
 // The FileSystemBase implementation returns -ENOSYS.
 func (*FileSystemBase) Create(path string, flags int, mode uint32) (int, uint64) {
 	return -ENOSYS, ^uint64(0)
 }
 
 // Open opens a file.
+// The flags are a combination of the fuse.O_* constants.
 // The FileSystemBase implementation returns -ENOSYS.
 func (*FileSystemBase) Open(path string, flags int) (int, uint64) {
 	return -ENOSYS, ^uint64(0)
@@ -647,7 +750,9 @@ func (*FileSystemBase) Fsync(path string, datasync bool, fh uint64) int {
 }
 
 /*
-func (*FileSystemBase) Lock(path string, fh uint64, cmd int, lock Flock_t) int {
+// Lock performs a file locking operation.
+// The FileSystemBase implementation returns -ENOSYS.
+func (*FileSystemBase) Lock(path string, cmd int, lock *Lock_t, fh uint64) int {
 	return -ENOSYS
 }
 */

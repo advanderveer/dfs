@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/advanderveer/dfs/ddfs"
+	"github.com/advanderveer/dfs/ffs"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -22,7 +22,7 @@ func main() {
 		logs.Fatalf("failed to create storage dir: %v", err)
 	}
 
-	fs, err := ddfs.NewFS(os.Args[1], os.Stderr)
+	fs, err := ffs.NewFS(nil)
 	if err != nil {
 		logs.Fatalf("failed to create filesystem: %v", err)
 	}

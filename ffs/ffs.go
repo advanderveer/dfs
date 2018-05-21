@@ -1,7 +1,7 @@
 /*
  * memfs.go
  *
- * Copyright 2017 Bill Zissimopoulos
+ * Copyright 2017-2018 Bill Zissimopoulos
  */
 /*
  * This file is part of Cgofuse.
@@ -10,14 +10,15 @@
  * in the License.txt file at the root of this project.
  */
 
-package main
+package ffs
 
 import (
 	"fmt"
-	"os"
+	"math"
 	"strings"
 	"sync"
 
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/billziss-gh/cgofuse/examples/shared"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
@@ -96,6 +97,11 @@ type Memfs struct {
 	ino     uint64
 	root    *node_t
 	openmap map[uint64]*node_t
+}
+
+func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
+	stat.Bavail = math.MaxUint64
+	return
 }
 
 func (self *Memfs) Mknod(path string, mode uint32, dev uint64) (errc int) {
@@ -565,22 +571,15 @@ func (self *Memfs) synchronize() func() {
 	}
 }
 
-func NewMemfs() *Memfs {
+func NewFS(tr fdb.Transactor) (*Memfs, error) {
 	self := Memfs{}
 	defer self.synchronize()()
 	self.ino++
 	self.root = newNode(0, self.ino, fuse.S_IFDIR|00777, 0, 0)
 	self.openmap = map[uint64]*node_t{}
-	return &self
+	return &self, nil
 }
 
 var _ fuse.FileSystemChflags = (*Memfs)(nil)
 var _ fuse.FileSystemSetcrtime = (*Memfs)(nil)
 var _ fuse.FileSystemSetchgtime = (*Memfs)(nil)
-
-func main() {
-	memfs := NewMemfs()
-	host := fuse.NewFileSystemHost(memfs)
-	host.SetCapReaddirPlus(true)
-	host.Mount("", os.Args[1:])
-}

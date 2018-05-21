@@ -160,7 +160,7 @@ func (fs *FS) doTruncate(tx *bolt.Tx, path string, size int64, fh uint64) (errc 
 		return -fuse.ENOENT
 	}
 
-	node.WriteData(resize(node.ReadData(), size, true))
+	node.WriteData(fs.resize(node.ReadData(), size, true))
 	node.Stat.Size = size
 	tmsp := fuse.Now()
 	node.Stat.Ctim = tmsp
@@ -197,7 +197,7 @@ func (fs *FS) doWrite(tx *bolt.Tx, path string, buff []byte, ofst int64, fh uint
 	}
 	endofst := ofst + int64(len(buff))
 	if endofst > node.Stat.Size {
-		node.WriteData(resize(node.ReadData(), endofst, true))
+		node.WriteData(fs.resize(node.ReadData(), endofst, true))
 		node.Stat.Size = endofst
 	}
 

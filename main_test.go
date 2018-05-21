@@ -10,15 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/advanderveer/dfs/ddfs"
+	"github.com/advanderveer/dfs/ffs"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
 // Your (Storage) product is only as good as its test suite:
 // 1/ https://blogs.oracle.com/bill/entry/zfs_and_the_all_singing
 // 2/ tools: https://github.com/billziss-gh/secfs.test
-
-//@TODO find out how remounted filesystem behaves "the same" as the first mount, checksumming?
 
 func TestQuickIO(t *testing.T) {
 	dbdir, err := ioutil.TempDir("", "dfs_")
@@ -30,7 +28,8 @@ func TestQuickIO(t *testing.T) {
 		t.Run("linux/osx fuzzing", func(t *testing.T) {
 			fmt.Println("dbdir:", dbdir)
 
-			dfs, err := ddfs.NewFS(dbdir, os.Stderr)
+			//@TODO open fdb
+			dfs, err := ffs.NewFS(nil)
 			ok(t, err)
 			host := fuse.NewFileSystemHost(dfs)
 			host.SetCapReaddirPlus(true)

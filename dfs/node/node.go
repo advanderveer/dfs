@@ -90,6 +90,7 @@ type N struct {
 
 //Persist will write changes to disk
 func (n *N) Persist(tx *bolt.Tx) {
+	fmt.Println("Persisting", n.data)
 	MustPutNode(tx, n)
 }
 

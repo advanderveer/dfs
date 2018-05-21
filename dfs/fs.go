@@ -2,6 +2,7 @@ package dfs
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
 
 	"github.com/advanderveer/dfs/dfs/node"
@@ -11,8 +12,9 @@ import (
 
 const appleResForkAttr = "com.apple.ResourceFork"
 
-func resize(slice []byte, size int64, zeroinit bool) []byte {
-	const allocunit = 64 * 1024
+const allocunit = 64 * 1024
+
+func (fs *FS) resize(slice []byte, size int64, zeroinit bool) []byte {
 	allocsize := (size + allocunit - 1) / allocunit * allocunit
 	if cap(slice) != int(allocsize) {
 		var newslice []byte
@@ -44,7 +46,7 @@ type FS struct {
 	dir   string
 }
 
-func endTx(tx *bolt.Tx, perrc *int) {
+func (fs *FS) endTx(tx *bolt.Tx, perrc *int) {
 	if !tx.Writable() {
 		if err := tx.Rollback(); err != nil {
 			*perrc = -fuse.EIO //rollback failed
@@ -59,8 +61,9 @@ func endTx(tx *bolt.Tx, perrc *int) {
 }
 
 // Statfs gets file system statistics.
-func (fs *FS) Statfs(path string, stat *fuse.Statfs_t) int {
-	return -fuse.ENOSYS
+func (fs *FS) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
+	stat.Bavail = math.MaxUint64 //@TODO decide on an actual size
+	return
 }
 
 // Mknod creates a file node.
@@ -70,7 +73,7 @@ func (fs *FS) Mknod(path string, mode uint32, dev uint64) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doMkNod(tx, path, mode, dev)
 }
 
@@ -81,7 +84,7 @@ func (fs *FS) Mkdir(path string, mode uint32) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doMkdir(tx, path, mode)
 }
 
@@ -92,7 +95,7 @@ func (fs *FS) Unlink(path string) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doUnlink(tx, path)
 }
 
@@ -103,7 +106,7 @@ func (fs *FS) Rmdir(path string) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doRmdir(tx, path)
 }
 
@@ -114,7 +117,7 @@ func (fs *FS) Link(oldpath string, newpath string) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doLink(tx, oldpath, newpath)
 }
 
@@ -125,7 +128,7 @@ func (fs *FS) Symlink(target string, newpath string) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doSymlink(tx, target, newpath)
 }
 
@@ -136,7 +139,7 @@ func (fs *FS) Readlink(path string) (errc int, target string) {
 		return -fuse.EIO, ""
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doReadlink(tx, path)
 }
 
@@ -147,7 +150,7 @@ func (fs *FS) Rename(oldpath string, newpath string) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doRename(tx, oldpath, newpath)
 }
 
@@ -158,7 +161,7 @@ func (fs *FS) Chmod(path string, mode uint32) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doChmod(tx, path, mode)
 }
 
@@ -169,7 +172,7 @@ func (fs *FS) Chown(path string, uid uint32, gid uint32) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doChown(tx, path, uid, gid)
 }
 
@@ -180,7 +183,7 @@ func (fs *FS) Utimens(path string, tmsp []fuse.Timespec) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doUtimens(tx, path, tmsp)
 }
 
@@ -191,7 +194,7 @@ func (fs *FS) Open(path string, flags int) (errc int, fh uint64) {
 		return -fuse.EIO, ^uint64(0)
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doOpen(tx, path, flags)
 }
 
@@ -202,7 +205,7 @@ func (fs *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doGetattr(tx, path, stat, fh)
 }
 
@@ -213,7 +216,7 @@ func (fs *FS) Truncate(path string, size int64, fh uint64) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doTruncate(tx, path, size, fh)
 }
 
@@ -224,7 +227,7 @@ func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &n)
+	defer fs.endTx(tx, &n)
 	return fs.doRead(tx, path, buff, ofst, fh)
 }
 
@@ -235,8 +238,11 @@ func (fs *FS) Write(path string, buff []byte, ofst int64, fh uint64) (n int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &n)
-	return fs.doWrite(tx, path, buff, ofst, fh)
+	n = fs.doWrite(tx, path, buff, ofst, fh)
+	fs.endTx(tx, &n)
+
+	fmt.Println("write", path, buff, ofst, n)
+	return
 }
 
 // Release closes an open file.
@@ -246,7 +252,7 @@ func (fs *FS) Release(path string, fh uint64) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doRelease(tx, path, fh)
 }
 
@@ -257,7 +263,7 @@ func (fs *FS) Opendir(path string) (errc int, fh uint64) {
 		return -fuse.EIO, ^uint64(0)
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doOpendir(tx, path)
 }
 
@@ -271,7 +277,7 @@ func (fs *FS) Readdir(path string,
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doReaddir(tx, path, fill, ofst, fh)
 }
 
@@ -282,7 +288,7 @@ func (fs *FS) Releasedir(path string, fh uint64) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doReleasedir(tx, path, fh)
 }
 
@@ -293,7 +299,7 @@ func (fs *FS) Setxattr(path string, name string, value []byte, flags int) (errc 
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doSetxattr(tx, path, name, value, flags)
 }
 
@@ -304,7 +310,7 @@ func (fs *FS) Getxattr(path string, name string) (errc int, xatr []byte) {
 		return -fuse.EIO, nil
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doGetxattr(tx, path, name)
 }
 
@@ -315,7 +321,7 @@ func (fs *FS) Removexattr(path string, name string) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doRemovexattr(tx, path, name)
 }
 
@@ -326,8 +332,13 @@ func (fs *FS) Listxattr(path string, fill func(name string) bool) (errc int) {
 		return -fuse.EIO
 	}
 
-	defer endTx(tx, &errc)
+	defer fs.endTx(tx, &errc)
 	return fs.doListxattr(tx, path, fill)
+}
+
+//Close the database
+func (fs *FS) Close() error {
+	return fs.db.Close()
 }
 
 //NewFS sets up the filesystem
