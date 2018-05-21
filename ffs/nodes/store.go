@@ -1,6 +1,8 @@
 package nodes
 
 import (
+	"sync"
+
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -48,13 +50,8 @@ func (n *NodeT) XAtrEach(f func(name string) int) (errc int) {
 	return 0
 }
 
-func (n *NodeT) CountChld() int64 {
-	return int64(len(n.chld))
-}
-
-func (n *NodeT) GetChld(name string) *NodeT {
-	return n.chld[name]
-}
+func (n *NodeT) CountChld() int64           { return int64(len(n.chld)) }
+func (n *NodeT) GetChld(name string) *NodeT { return n.chld[name] }
 func (n *NodeT) ChldEach(f func(name string, n *NodeT) bool) {
 	for name, n := range n.chld {
 		stop := f(name, n)
@@ -102,8 +99,19 @@ func NewStore(root *NodeT) *Store {
 	return &Store{root: root}
 }
 
-type Store struct {
-	root *NodeT
+func (store *Store) Transact() func() {
+	store.lock.Lock()
+	return func() {
+		store.lock.Unlock()
+	}
 }
 
-func (store *Store) Root() *NodeT { return store.root }
+type Store struct {
+	ino  uint64
+	root *NodeT
+	lock sync.Mutex
+}
+
+func (store *Store) IncIno()      { store.ino++ }       //@TODO protect by tr
+func (store *Store) Ino() uint64  { return store.ino }  //@TODO protect by tr
+func (store *Store) Root() *NodeT { return store.root } //@TODO ptoject by tr
