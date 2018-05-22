@@ -54,6 +54,7 @@ func main() {
 		logs.Fatalf("failed to create block store: %v", err)
 	}
 
+	defer bstore.Close()
 	fs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore)
 	if err != nil {
 		logs.Fatalf("failed to create filesystem: %v", err)

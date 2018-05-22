@@ -35,10 +35,10 @@ func TestQuickIO(t *testing.T) {
 
 			bstore, err := blocks.NewStore(bdir, "")
 			if err != nil {
-				t.Fatal("failed to create block store", bstore)
+				t.Fatal("failed to create block store", err)
 			}
 
-			//@TODO open fdb
+			defer bstore.Close()
 			dfs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore)
 			ok(t, err)
 

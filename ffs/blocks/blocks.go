@@ -1,7 +1,10 @@
 package blocks
 
 import (
-	"crypto/rand"
+	"encoding/gob"
+	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/advanderveer/dfs/ffs/nodes"
@@ -10,6 +13,7 @@ import (
 )
 
 type Store struct {
+	dir    string
 	blocks map[uint64][]byte
 	db     *bolt.DB
 	bucket []byte
@@ -17,71 +21,46 @@ type Store struct {
 
 func NewStore(dir string, ns string) (store *Store, err error) {
 	store = &Store{
+		dir:    dir,
 		blocks: map[uint64][]byte{},
 	}
 
-	store.bucket = []byte(ns)
-	if len(store.bucket) < 1 {
-		store.bucket = make([]byte, 6)
-		_, err = rand.Read(store.bucket)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	store.db, err = bolt.Open(filepath.Join(dir, "blocks.bolt"), 0600, nil)
+	f, err := os.OpenFile(filepath.Join(store.dir, "blocks.gob"), os.O_CREATE|os.O_RDWR, 0777)
 	if err != nil {
 		return nil, err
 	}
 
-	return store, store.db.Update(func(btx *bolt.Tx) error {
-		_, err := btx.CreateBucketIfNotExists(store.bucket)
-		if err != nil {
-			return err
-		}
+	defer f.Close()
+	dec := gob.NewDecoder(f)
+	err = dec.Decode(&store.blocks)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
 
-		return nil
-	})
+	fmt.Printf("loaded %d blocks\n", len(store.blocks))
+	return store, nil
+}
+
+func (store *Store) Close() error {
+	f, err := os.Create(filepath.Join(store.dir, "blocks.gob"))
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+	enc := gob.NewEncoder(f)
+	return enc.Encode(store.blocks)
 }
 
 func (store *Store) ReadData(n *nodes.Node, tx fdb.Transaction) (d []byte) {
-	// if err := store.db.View(func(btx *bolt.Tx) (err error) {
-	// 	ino := n.StatGetIno(tx)
-	//
-	// 	k := make([]byte, 8)
-	// 	binary.LittleEndian.PutUint64(k, ino)
-	//
-	// 	v := btx.Bucket(store.bucket).Get(k)
-	// 	d = make([]byte, len(v))
-	// 	copy(d, v)
-	//
-	// 	return
-	// }); err != nil {
-	// 	fmt.Print("blocks: failed to read data:", err)
-	// }
-
-	// return
-
 	return store.blocks[n.StatGetIno(tx)]
 }
 
 func (store *Store) WriteData(n *nodes.Node, tx fdb.Transaction, d []byte) {
-	// if err := store.db.Update(func(btx *bolt.Tx) (err error) {
-	// 	b, _ := btx.CreateBucketIfNotExists(store.bucket)
-	// 	ino := n.StatGetIno(tx)
-	//
-	// 	k := make([]byte, 8)
-	// 	binary.LittleEndian.PutUint64(k, ino)
-	// 	return b.Put(k, d)
-	// }); err != nil {
-	// 	fmt.Print("blocks: failed to read data:", err)
-	// }
-
 	store.blocks[n.StatGetIno(tx)] = d
 }
 
 func (store *Store) CopyData(n *nodes.Node, tx fdb.Transaction, d []byte) {
 	d2 := store.ReadData(n, tx)
 	copy(d2, d)
-	// store.WriteData(n, tx, d2)
 }
