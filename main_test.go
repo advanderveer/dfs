@@ -12,8 +12,8 @@ import (
 
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/blocks"
+	"github.com/advanderveer/dfs/ffs/fsrpc"
 	"github.com/advanderveer/dfs/ffs/nodes"
-	"github.com/advanderveer/dfs/ffs/server"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -22,6 +22,7 @@ import (
 // 2/ tools: https://github.com/billziss-gh/secfs.test
 
 //@TODO add a test that checks if the ino correct after new mount
+
 func TestQuickIO(t *testing.T) {
 	bdir, err := ioutil.TempDir("", "dfs_")
 	ok(t, err)
@@ -29,6 +30,7 @@ func TestQuickIO(t *testing.T) {
 	db, dir, clean := db(bdir)
 	defer clean()
 
+	fmt.Println("scope", bdir)
 	if runtime.GOOS == "windows" {
 		t.Skip("no windows testing yet")
 	} else {
@@ -44,19 +46,27 @@ func TestQuickIO(t *testing.T) {
 			dfs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore)
 			ok(t, err)
 
-			var fsiface fuse.FileSystemInterface = dfs
-			fsiface, err = server.NewSimpleRPCFS(dfs)
+			// var fsiface fuse.FileSystemInterface = dfs
+			svr, err := fsrpc.NewServer(dfs, ":")
 			if err != nil {
-				t.Fatalf("failed to create rpc filesyste,")
+				t.Fatal(err)
 			}
 
-			host := fuse.NewFileSystemHost(fsiface)
+			go svr.ListenAndServe()
+			time.Sleep(time.Second)
+
+			remotefs, err := fsrpc.Dial(svr.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_ = remotefs
+
+			host := fuse.NewFileSystemHost(dfs)
 			host.SetCapReaddirPlus(true)
 
 			mntdir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
-
 			go func() {
-
 				for {
 					fi, err := os.Stat(mntdir)
 					if err == nil && fi.IsDir() {
@@ -90,6 +100,19 @@ func TestQuickIO(t *testing.T) {
 				dira := filepath.Join(mntdir, "a")
 				err = os.Mkdir(dira, 0777)
 				ok(t, err)
+
+				// Seed set to 1527358203
+				// All operations - 100 - completed A-OK!
+				// === RUN   TestQuickIO/linux/osx_fuzzing/run_fstorture
+				// root1 = /var/folders/8g/sd7s1zr94f948ds6_q0v3q180000gn/T/1527273901808862767_TestQuickIO/linux/osx_fuzzing/a does not exist
+				// main_test.go:126: unexpected error: exit status 1
+				//
+				// === RUN   TestQuickIO/linux/osx_fuzzing/create_and_read_link
+				// main_test.go:139: unexpected error: stat /var/folders/8g/sd7s1zr94f948ds6_q0v3q180000gn/T/1527273901808862767_TestQuickIO/linux/osx_fuzzing/c: no such file or directory
+				//
+				// === RUN   TestQuickIO/linux/osx_fuzzing/create_and_read_hard_link
+				// === RUN   TestQuickIO/linux/osx_fuzzing/create_and_read_hard_link/through_link
+				time.Sleep(time.Second * 10) //@TODO remove me, sometimes the error above is shown
 
 				t.Run("run fsx", func(t *testing.T) {
 					cmd := exec.Command("fsx", "-N", "5000", "test", "xxxxxx")

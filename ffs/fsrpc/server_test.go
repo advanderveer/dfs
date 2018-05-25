@@ -1,13 +1,15 @@
-package server
+package fsrpc
 
 import (
 	"bytes"
 	"io/ioutil"
 	"log"
 	"math"
+	"net"
 	"net/rpc"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/blocks"
@@ -58,7 +60,14 @@ func TestFSRPC(t *testing.T) {
 		t.Fatalf("failed to create filesystem: %v", err)
 	}
 
-	conn, err := SimpleRPC(fs)
+	svr, err := NewServer(fs, ":")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go svr.ListenAndServe()
+	time.Sleep(time.Second)
+	conn, err := net.DialTimeout("tcp", svr.Addr().String(), time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

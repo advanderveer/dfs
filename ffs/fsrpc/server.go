@@ -1,4 +1,4 @@
-package server
+package fsrpc
 
 import (
 	"github.com/billziss-gh/cgofuse/fuse"
