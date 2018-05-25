@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"io/ioutil"
 	"log"
 	"math"
 	"net"
 	"net/rpc"
+	"reflect"
 	"testing"
 	"time"
 
@@ -134,4 +136,72 @@ func TestFSRPC(t *testing.T) {
 	if reply.Args.Stat.Bavail != math.MaxUint64 {
 		t.Fatal("failed to return available blocks")
 	}
+
+	sndr := &Sender{c, nil}
+	var _ FS = sndr //check if the rpc client statisfies the filesystem interface
+
+	stfs := &fuse.Statfs_t{}
+	errc := sndr.Statfs("/", stfs)
+	if errc != 0 {
+		t.Fatal("expected errc to be zero")
+	}
+
+	if sndr.LastErr != nil {
+		t.Fatal("expected last error to be nil")
+	}
+
+	if stfs.Bavail != math.MaxUint64 {
+		t.Fatalf("expected statf to return correct values, got: %#v\n", stfs)
+	}
+
+	t.Run("make dir remote, then read dirs", func(t *testing.T) {
+		errc := sndr.Mkdir("/foo", 0777)
+		if errc != 0 || sndr.LastErr != nil {
+			t.Fatalf("failed to create dir (%d): %v\n", errc, sndr.LastErr)
+		}
+
+		errc, fh := sndr.Opendir("/")
+		if errc != 0 || sndr.LastErr != nil {
+			t.Fatal(err)
+		}
+
+		//@TODO test readdir and readxargs
+		dirnames := []string{}
+		if errc = sndr.Readdir("/", func(name string, stat *fuse.Stat_t, ofst int64) bool {
+			dirnames = append(dirnames, name)
+			return true
+		}, 0, fh); errc != 0 || sndr.LastErr != nil {
+			t.Fatalf("failed to create dir (%d): %v\n", errc, sndr.LastErr)
+		}
+
+		if reflect.DeepEqual(dirnames, []string{"..", ".", "foo"}) {
+			t.Fatal("readdir should work")
+		}
+	})
+
+	t.Run("xattr list", func(t *testing.T) {
+
+		errc := sndr.Setxattr("/", "hello", []byte("bar"), 0)
+		if errc != 0 || sndr.LastErr != nil {
+			t.Fatal(sndr.LastErr)
+		}
+
+		errc, attr := sndr.Getxattr("/", "hello")
+		if errc != 0 || sndr.LastErr != nil {
+			t.Fatal(sndr.LastErr)
+		}
+
+		if !bytes.Equal(attr, []byte("bar")) {
+			t.Fatal("expected the attr to equal")
+		}
+
+		attrs := []string{}
+		if errc = sndr.Listxattr("/", func(name string) bool {
+			attrs = append(attrs, name)
+			return true
+		}); errc != 0 || sndr.LastErr != nil {
+			t.Fatal(sndr.LastErr)
+		}
+	})
+
 }

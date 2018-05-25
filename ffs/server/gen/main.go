@@ -92,8 +92,10 @@ import (
 // }
 
 type ParamDecl struct {
-	Name string
-	Type string
+	IsPointer bool
+	FieldName string
+	Name      string
+	Type      string
 }
 
 type ResultDecl struct {
@@ -118,13 +120,28 @@ import(
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
+type ReaddirCall struct{
+	Name string
+	Stat *fuse.Stat_t
+	Ofst int64
+}
+
+type ListxattrCall struct{
+	Name string
+}
+
+type Sender struct{
+	rpc interface{ Call(serviceMethod string, args interface{}, reply interface{}) error }
+	LastErr error
+}
+
 //Receiver receives RPC requests and returns results
 type Receiver struct {
 	fs FS
 }
 {{range $i, $proc := .Procs}}
 type {{$proc.Name}}Args struct {
-	{{range $j, $param := $proc.Params}}{{$param.Name}} {{$param.Type}}
+	{{range $j, $param := $proc.Params}}{{$param.FieldName}} {{$param.Type}}
 	{{end}}
 }
 
@@ -132,12 +149,54 @@ type {{$proc.Name}}Reply struct {
 	Args *{{$proc.Name}}Args
 	{{range $j, $res := $proc.Results}}R{{$j}} {{$res.Type}}
 	{{end}}
+	{{if eq $proc.Name "Readdir"}}Fills []ReaddirCall{{end}}
+	{{if eq $proc.Name "Listxattr"}}Fills []ListxattrCall{{end}}
 }
 func (rcvr *Receiver) {{$proc.Name}}(a *{{$proc.Name}}Args, r *{{$proc.Name}}Reply) (err error) {
-	{{if $proc.Results}}{{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}r.R{{$j}} {{end}} = {{end}}rcvr.fs.{{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $j 0}}, {{end}}a.{{$param.Name}} {{end}})
+	{{if eq $proc.Name "Readdir"}}a.Fill = func(name string, stat *fuse.Stat_t, ofst int64) bool{
+		r.Fills = append(r.Fills, ReaddirCall{Name: name, Stat: stat, Ofst: ofst})
+		return true
+	}
+	{{else if eq $proc.Name "Listxattr"}}
+	a.Fill = func(name string) bool{
+		r.Fills = append(r.Fills, ListxattrCall{Name: name})
+		return true
+	}
+	{{end}}
+
+	{{if $proc.Results}}{{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}r.R{{$j}} {{end}} = {{end}}rcvr.fs.{{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $j 0}}, {{end}}a.{{$param.FieldName}} {{end}})
 	r.Args = a
 	return
 }
+
+func (sndr *Sender) {{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $j 0}}, {{end}}{{$param.Name}}  {{$param.Type}}{{end}}) {{if $proc.Results}}({{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}{{$res.Type}}{{end}}){{end}} {
+	{{if $proc.Results}}r := &{{$proc.Name}}Reply{}{{else}}r := struct{}{}{{end}}
+	a := &{{$proc.Name}}Args{
+		{{range $j, $param := $proc.Params}}{{$param.FieldName}}: {{$param.Name}},
+		{{end}}
+	}
+
+	sndr.LastErr = sndr.rpc.Call("FS.{{$proc.Name}}", a, r)
+	{{range $j, $param := $proc.Params}}{{if $param.IsPointer}}*{{$param.Name}} = *r.Args.{{$param.FieldName}}{{end}}
+	{{end}}
+
+	{{if eq $proc.Name "Readdir"}}
+	for _, c := range r.Fills {
+		if !fill(c.Name, c.Stat, c.Ofst) {
+			break
+		}
+	}
+	{{else if eq $proc.Name "Listxattr"}}
+	for _, c := range r.Fills {
+		if !fill(c.Name) {
+			break
+		}
+	}
+	{{end}}
+
+	return {{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}r.R{{$j}}{{end}}
+}
+
 {{end}}
 
 `))
@@ -200,7 +259,6 @@ func parse(logs *log.Logger, fset *token.FileSet, name string) (err error) {
 			return fmt.Errorf("iterface method type is not a signature")
 		}
 
-		fmt.Println(m.Name())
 		procDecl := ProcedureDecl{
 			Name:    m.Name(),
 			Params:  make([]ParamDecl, sig.Params().Len()),
@@ -210,11 +268,12 @@ func parse(logs *log.Logger, fset *token.FileSet, name string) (err error) {
 		for j := 0; j < sig.Params().Len(); j++ {
 			p := sig.Params().At(j)
 			procDecl.Params[j] = ParamDecl{
-				Name: strings.Title(p.Name()),
-				Type: strings.Replace(p.Type().String(), "github.com/advanderveer/dfs/vendor/github.com/billziss-gh/cgofuse/fuse", "fuse", 1),
+				FieldName: strings.Title(p.Name()),
+				Name:      p.Name(),
+				Type:      strings.Replace(p.Type().String(), "github.com/advanderveer/dfs/vendor/github.com/billziss-gh/cgofuse/fuse", "fuse", 1),
 			}
 
-			fmt.Printf("\t->%s %#v\n", p.Name(), p.Type().String())
+			_, procDecl.Params[j].IsPointer = p.Type().Underlying().(*types.Pointer)
 		}
 
 		for j := 0; j < sig.Results().Len(); j++ {
@@ -222,14 +281,12 @@ func parse(logs *log.Logger, fset *token.FileSet, name string) (err error) {
 			procDecl.Results[j] = ResultDecl{
 				Type: r.Type().String(),
 			}
-
-			fmt.Println("\t<-", r)
 		}
 
 		svrDecl.Procs[i] = procDecl
 	}
 
-	err = write(logs, strings.Replace(name, ".go", "_svr.go", 1), svrDecl)
+	err = write(logs, strings.Replace(name, ".go", "_rpc.go", 1), svrDecl)
 	if err != nil {
 		return fmt.Errorf("failed to write output: %v", err)
 	}

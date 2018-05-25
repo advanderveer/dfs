@@ -317,13 +317,16 @@ func (self *Memfs) Opendir(path string) (errc int, fh uint64) {
 
 }
 
+//@TODO our rpc implementation doesn't allow for calling back to clients to "fill" something
+//this means that for now the server will always return and buffer all entries. This can cause
+//high bandwidth and memory issues. Solution is to transparently provide a paging mechanism
 func (self *Memfs) Readdir(path string,
 	fill func(name string, stat *fuse.Stat_t, ofst int64) bool,
 	ofst int64,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
 	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		node := self.openmap[fh]
+		node := self.openmap[fh] //@TODO what if dir was not first openend?
 		sta := node.Stat(tx)
 
 		fill(".", &sta, 0)
@@ -591,6 +594,7 @@ func NewFS(nstore *nodes.Store, bstore *blocks.Store) (*Memfs, error) {
 	return &self, nil
 }
 
+var _ fuse.FileSystemInterface = (*Memfs)(nil)
 var _ fuse.FileSystemChflags = (*Memfs)(nil)
 var _ fuse.FileSystemSetcrtime = (*Memfs)(nil)
 var _ fuse.FileSystemSetchgtime = (*Memfs)(nil)
