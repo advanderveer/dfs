@@ -46,7 +46,6 @@ func TestQuickIO(t *testing.T) {
 			dfs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore)
 			ok(t, err)
 
-			// var fsiface fuse.FileSystemInterface = dfs
 			svr, err := fsrpc.NewServer(dfs, ":")
 			if err != nil {
 				t.Fatal(err)

@@ -62,9 +62,14 @@ func main() {
 		logs.Fatalf("failed to create filesystem: %v", err)
 	}
 
+	svr, err := fsrpc.NewServer(fs, os.Args[2])
+	if err != nil {
+		logs.Fatalf("failed to setup filesystem server")
+	}
+
 	defer fmt.Println("exited")
 	go func() {
-		fmt.Println(fsrpc.ListenAndServe(fs, os.Args[2]))
+		fmt.Println(svr.ListenAndServe())
 	}()
 	<-c
 }
