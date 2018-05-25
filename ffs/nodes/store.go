@@ -1,8 +1,6 @@
 package nodes
 
 import (
-	"sync"
-
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	fdbdir "github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
@@ -12,8 +10,7 @@ import (
 type Store struct {
 	tr   fdb.Transactor
 	ss   fdbdir.DirectorySubspace
-	root *Node //@TODO read from db
-	lock sync.Mutex
+	root *Node
 }
 
 func NewStore(tr fdb.Transactor, ss fdbdir.DirectorySubspace) *Store {
@@ -77,8 +74,6 @@ func (store *Store) Root(tx fdb.Transaction) *Node {
 }
 
 func (store *Store) TxWithInt(f func(tx fdb.Transaction) (n int)) (n int) {
-	store.lock.Lock()
-	defer store.lock.Unlock()
 	if _, err := store.tr.Transact(func(tx fdb.Transaction) (r interface{}, e error) {
 		n = f(tx)
 		return
@@ -90,8 +85,6 @@ func (store *Store) TxWithInt(f func(tx fdb.Transaction) (n int)) (n int) {
 }
 
 func (store *Store) TxWithErrcBytes(f func(tx fdb.Transaction) (errc int, d []byte)) (errc int, d []byte) {
-	store.lock.Lock()
-	defer store.lock.Unlock()
 	if _, err := store.tr.Transact(func(tx fdb.Transaction) (r interface{}, e error) {
 		errc, d = f(tx)
 		return
@@ -103,8 +96,6 @@ func (store *Store) TxWithErrcBytes(f func(tx fdb.Transaction) (errc int, d []by
 }
 
 func (store *Store) TxWithErrcUint64(f func(tx fdb.Transaction) (errc int, n uint64)) (errc int, n uint64) {
-	store.lock.Lock()
-	defer store.lock.Unlock()
 	if _, err := store.tr.Transact(func(tx fdb.Transaction) (r interface{}, e error) {
 		errc, n = f(tx)
 		return
@@ -116,8 +107,6 @@ func (store *Store) TxWithErrcUint64(f func(tx fdb.Transaction) (errc int, n uin
 }
 
 func (store *Store) TxWithErrcStr(f func(tx fdb.Transaction) (errc int, str string)) (errc int, str string) {
-	store.lock.Lock()
-	defer store.lock.Unlock()
 	if _, err := store.tr.Transact(func(tx fdb.Transaction) (r interface{}, e error) {
 		errc, str = f(tx)
 		return
@@ -129,8 +118,6 @@ func (store *Store) TxWithErrcStr(f func(tx fdb.Transaction) (errc int, str stri
 }
 
 func (store *Store) TxWithErrc(f func(tx fdb.Transaction) (errc int)) (errc int) {
-	store.lock.Lock()
-	defer store.lock.Unlock()
 	if _, err := store.tr.Transact(func(tx fdb.Transaction) (r interface{}, e error) {
 		errc = f(tx)
 		return
