@@ -13,14 +13,14 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-func db() (tr fdb.Transactor, ss directory.DirectorySubspace, f func()) {
+func db(ns string) (tr fdb.Transactor, ss directory.DirectorySubspace, f func()) {
 	fdb.MustAPIVersion(510)
 	db, err := fdb.OpenDefault()
 	if err != nil {
 		log.Fatal("failed to open database:", err)
 	}
 
-	dir, err := directory.CreateOrOpen(db, []string{"fdb-tests", "litmus"}, nil)
+	dir, err := directory.CreateOrOpen(db, []string{"fdb-tests", ns}, nil)
 	if err != nil {
 		log.Fatal("failed to create or open app dir:", err)
 	}
@@ -47,8 +47,8 @@ func main() {
 		logs.Fatalf("failed to create block storage dir: %v", err)
 	}
 
-	db, dir, clean := db()
-	defer clean()
+	db, dir, _ := db(os.Args[1])
+	// defer clean()
 
 	bstore, err := blocks.NewStore(os.Args[1], "blocks")
 	if err != nil {

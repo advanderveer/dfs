@@ -21,11 +21,12 @@ import (
 // 1/ https://blogs.oracle.com/bill/entry/zfs_and_the_all_singing
 // 2/ tools: https://github.com/billziss-gh/secfs.test
 
+//@TODO add a test that checks if the ino correct after new mount
 func TestQuickIO(t *testing.T) {
 	bdir, err := ioutil.TempDir("", "dfs_")
 	ok(t, err)
 
-	db, dir, clean := db()
+	db, dir, clean := db(bdir)
 	defer clean()
 
 	if runtime.GOOS == "windows" {
