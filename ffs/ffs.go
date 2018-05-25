@@ -5,7 +5,6 @@ import (
 	"math"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/nodes"
@@ -55,8 +54,8 @@ type Memfs struct {
 
 	//@TODO find out if we need to store this map on the remote, maybe to act as
 	//a locking mechanis or to report recent interactions
-	openmap  map[uint64]*nodes.Node
-	openlock sync.Mutex
+	openmap map[uint64]*nodes.Node
+	// openlock sync.Mutex
 }
 
 func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
@@ -330,8 +329,8 @@ func (self *Memfs) Readdir(path string,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
 	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		self.openlock.Lock()
-		defer self.openlock.Unlock()
+		// self.openlock.Lock()
+		// defer self.openlock.Unlock()
 		node := self.openmap[fh] //@TODO what if dir was not first openend?
 		sta := node.Stat(tx)
 
@@ -550,16 +549,16 @@ func (self *Memfs) openNode(tx fdb.Transaction, path string, dir bool) (int, uin
 
 	node.IncOpencnt(tx)
 	if 1 == node.Opencnt(tx) {
-		self.openlock.Lock()
-		defer self.openlock.Unlock()
+		// self.openlock.Lock()
+		// defer self.openlock.Unlock()
 		self.openmap[node.Stat(tx).Ino] = node
 	}
 	return 0, node.Stat(tx).Ino
 }
 
 func (self *Memfs) closeNode(tx fdb.Transaction, fh uint64) int {
-	self.openlock.Lock()
-	defer self.openlock.Unlock()
+	// self.openlock.Lock()
+	// defer self.openlock.Unlock()
 	node := self.openmap[fh]
 	node.DecOpencnt(tx)
 	if 0 == node.Opencnt(tx) {
@@ -574,8 +573,8 @@ func (self *Memfs) getNode(tx fdb.Transaction, path string, fh uint64) *nodes.No
 		_, _, node := self.lookupNode(tx, path, nil)
 		return node
 	} else {
-		self.openlock.Lock()
-		defer self.openlock.Unlock()
+		// self.openlock.Lock()
+		// defer self.openlock.Unlock()
 		return self.openmap[fh]
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
@@ -15,10 +14,9 @@ import (
 
 type Store struct {
 	dir    string
-	blocks map[uint64][]byte
+	blocks map[uint64][]byte //@TODO add lock
 	db     *bolt.DB
 	bucket []byte
-	lock   sync.Mutex
 }
 
 func NewStore(dir string, ns string) (store *Store, err error) {
@@ -55,23 +53,14 @@ func (store *Store) Close() error {
 }
 
 func (store *Store) ReadData(n *nodes.Node, tx fdb.Transaction) (d []byte) {
-	store.lock.Lock()
-	defer store.lock.Unlock()
-
 	return store.blocks[n.StatGetIno(tx)]
 }
 
 func (store *Store) WriteData(n *nodes.Node, tx fdb.Transaction, d []byte) {
-	store.lock.Lock()
-	defer store.lock.Unlock()
-
 	store.blocks[n.StatGetIno(tx)] = d
 }
 
 func (store *Store) CopyData(n *nodes.Node, tx fdb.Transaction, d []byte) {
-	store.lock.Lock()
-	defer store.lock.Unlock()
-
 	d2 := store.ReadData(n, tx)
 	copy(d2, d)
 }

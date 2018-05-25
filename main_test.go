@@ -60,9 +60,7 @@ func TestQuickIO(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			_ = remotefs
-
-			host := fuse.NewFileSystemHost(dfs)
+			host := fuse.NewFileSystemHost(remotefs)
 			host.SetCapReaddirPlus(true)
 
 			mntdir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
@@ -112,7 +110,7 @@ func TestQuickIO(t *testing.T) {
 				//
 				// === RUN   TestQuickIO/linux/osx_fuzzing/create_and_read_hard_link
 				// === RUN   TestQuickIO/linux/osx_fuzzing/create_and_read_hard_link/through_link
-				time.Sleep(time.Second * 10) //@TODO remove me, sometimes the error above is shown
+				// time.Sleep(time.Second * 10) //@TODO remove me, sometimes the error above is shown
 
 				t.Run("run fsx", func(t *testing.T) {
 					cmd := exec.Command("fsx", "-N", "5000", "test", "xxxxxx")
