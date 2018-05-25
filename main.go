@@ -36,7 +36,9 @@ func main() {
 		logs.Fatalf("ffs [addr] [mountpoint]")
 	}
 
-	logs.Printf("mounting filesystem from '%s' at '%s'", os.Args[1], os.Args[2])
+	uid := os.Getuid()
+	gid := os.Getgid()
+	logs.Printf("mounting filesystem from '%s' at '%s' (uid: %d, gid: %d)", os.Args[1], os.Args[2], uid, gid)
 	defer logs.Printf("unmounted, done!")
 
 	// conn, err := net.DialTimeout("tcp", os.Args[1], time.Second*2)
