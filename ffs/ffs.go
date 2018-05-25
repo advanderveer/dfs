@@ -18,7 +18,9 @@ func split(path string) []string {
 }
 
 func trace(vals ...interface{}) func(vals ...interface{}) {
-	uid, gid, _ := fuse.Getcontext()
+	uid := os.Getuid() //@TODO why can't we use fuse.GetContext() here?
+	gid := os.Getgid() //@TODO how will we deal with this when sharing file systems between computers?
+	// uid, gid, _ := fuse.Getcontext()
 	return shared.Trace(1, fmt.Sprintf("[uid=%v,gid=%v]", uid, gid), vals...)
 }
 
