@@ -3,6 +3,7 @@ package ffs
 import (
 	"fmt"
 	"math"
+	"os"
 	"strings"
 
 	"github.com/advanderveer/dfs/ffs/blocks"
@@ -132,6 +133,7 @@ func (self *Memfs) Readlink(path string) (errc int, target string) {
 		if fuse.S_IFLNK != node.Stat(tx).Mode&fuse.S_IFMT {
 			return -fuse.EINVAL, ""
 		}
+
 		return 0, string(self.bstore.ReadData(node, tx))
 	})
 }
@@ -486,8 +488,10 @@ func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev ui
 	}
 
 	self.nstore.IncIno(tx)
-	uid, gid, _ := fuse.Getcontext()
-	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uid, gid)
+	// uid, gid, _ := fuse.Getcontext()
+	uid := os.Getuid() //@TODO why can't we use fuse.GetContext() here?
+	gid := os.Getgid() //@TODO how will we deal with this when sharing file systems between computers?
+	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uint32(uid), uint32(gid))
 	if nil != data {
 		// node.SetData(tx, make([]byte, len(data)))
 		self.bstore.WriteData(node, tx, make([]byte, len(data)))

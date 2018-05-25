@@ -13,6 +13,7 @@ import (
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/nodes"
+	"github.com/advanderveer/dfs/ffs/server"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -42,7 +43,13 @@ func TestQuickIO(t *testing.T) {
 			dfs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore)
 			ok(t, err)
 
-			host := fuse.NewFileSystemHost(dfs)
+			var fsiface fuse.FileSystemInterface = dfs
+			fsiface, err = server.NewSimpleRPCFS(dfs)
+			if err != nil {
+				t.Fatalf("failed to create rpc filesyste,")
+			}
+
+			host := fuse.NewFileSystemHost(fsiface)
 			host.SetCapReaddirPlus(true)
 
 			mntdir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
@@ -125,7 +132,7 @@ func TestQuickIO(t *testing.T) {
 					ok(t, err)
 					equals(t, dira, lnk)
 
-					fi, err := os.Stat(filepath.Join(mntdir, "c"))
+					fi, err := os.Stat(filepath.Join(mntdir, "c")) //@TODO sometimes fails?
 					ok(t, err)
 					equals(t, fi.IsDir(), true)
 				})
@@ -135,12 +142,19 @@ func TestQuickIO(t *testing.T) {
 					err := ioutil.WriteFile(d, []byte{0x01}, 0777)
 					ok(t, err)
 
-					err = os.Link(d, filepath.Join(mntdir, "e"))
-					ok(t, err)
-
-					data, err := ioutil.ReadFile(filepath.Join(mntdir, "e"))
+					data, err := ioutil.ReadFile(filepath.Join(mntdir, "d"))
 					ok(t, err)
 					equals(t, []byte{0x01}, data)
+
+					t.Run("through link", func(t *testing.T) {
+						err = os.Link(d, filepath.Join(mntdir, "e"))
+						ok(t, err)
+
+						data, err := ioutil.ReadFile(filepath.Join(mntdir, "e"))
+						ok(t, err)
+						equals(t, []byte{0x01}, data)
+					})
+
 				})
 
 				t.Run("read dir", func(t *testing.T) {

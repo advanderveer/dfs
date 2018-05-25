@@ -7,6 +7,7 @@ import (
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/nodes"
+	"github.com/advanderveer/dfs/ffs/server"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"github.com/billziss-gh/cgofuse/fuse"
@@ -46,8 +47,8 @@ func main() {
 		logs.Fatalf("failed to create block storage dir: %v", err)
 	}
 
-	db, dir, _ := db()
-	// defer clean()
+	db, dir, clean := db()
+	defer clean()
 
 	bstore, err := blocks.NewStore(os.Args[1], "blocks")
 	if err != nil {
@@ -60,7 +61,13 @@ func main() {
 		logs.Fatalf("failed to create filesystem: %v", err)
 	}
 
-	host := fuse.NewFileSystemHost(fs)
+	var fsiface fuse.FileSystemInterface = fs
+	fsiface, err = server.NewSimpleRPCFS(fs)
+	if err != nil {
+		logs.Fatalf("failed to create rpc filesyste,")
+	}
+
+	host := fuse.NewFileSystemHost(fsiface)
 	if !host.Mount("", os.Args[2:]) {
 		os.Exit(1) //mount failed
 	}

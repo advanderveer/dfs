@@ -5,11 +5,9 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
-	"net"
 	"net/rpc"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/blocks"
@@ -39,42 +37,7 @@ func db() (tr fdb.Transactor, ss directory.DirectorySubspace, f func()) {
 	}
 }
 
-// func TestRPC(t *testing.T) {
-// 	svr := rpc.NewServer()
-// 	svr.RegisterName("A", new(Arith))
-// 	l, err := net.Listen("tcp6", ":")
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-//
-// 	go func() {
-// 		t.Logf("accepting connections on: %v", l.Addr())
-// 		for {
-// 			var conn net.Conn
-// 			conn, err = l.Accept()
-// 			if err != nil {
-// 				t.Fatal(err)
-// 			}
-//
-// 			go svr.ServeConn(conn)
-// 		}
-// 	}()
-//
-// 	conn, err := net.DialTimeout("tcp6", l.Addr().String(), time.Second)
-// 	if err != nil {
-// 		t.Fatal("failed to dial", err)
-// 	}
-//
-// 	c := rpc.NewClient(conn)
-// 	reply := &Reply{}
-// 	err = c.Call("A.Multiply", Args{7, 8}, reply)
-// 	if err != nil {
-// 		t.Fatal("failed to call", err)
-// 	}
-//
-// 	fmt.Println(reply)
-// }
-
+//@TODO test byte copy off read procedure
 func TestFSRPC(t *testing.T) {
 	bdir, err := ioutil.TempDir("", "dfs_")
 	if err != nil {
@@ -95,30 +58,9 @@ func TestFSRPC(t *testing.T) {
 		t.Fatalf("failed to create filesystem: %v", err)
 	}
 
-	svr := rpc.NewServer()
-	rcvr := &Receiver{fs: fs}
-	svr.RegisterName("FS", rcvr)
-	l, err := net.Listen("tcp6", ":")
+	conn, err := SimpleRPC(fs)
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	go func() {
-		t.Logf("accepting connections on: %v", l.Addr())
-		for {
-			var conn net.Conn
-			conn, err = l.Accept()
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			go svr.ServeConn(conn)
-		}
-	}()
-
-	conn, err := net.DialTimeout("tcp6", l.Addr().String(), time.Second)
-	if err != nil {
-		t.Fatal("failed to dial", err)
 	}
 
 	c := rpc.NewClient(conn)
@@ -203,5 +145,4 @@ func TestFSRPC(t *testing.T) {
 			t.Fatal(sndr.LastErr)
 		}
 	})
-
 }

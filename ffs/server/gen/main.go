@@ -16,81 +16,6 @@ import (
 	"text/template"
 )
 
-// func parseProcedure(logs *log.Logger, ftype *ast.FuncType) (p ProcedureDecl, err error) {
-// 	for _, param := range ftype.Params.List {
-// 		if len(param.Names) < 0 {
-// 			continue
-// 		}
-//
-// 		if p.InputDecl == nil {
-// 			p.InputDecl = make(map[string]ValueDecl)
-// 		}
-//
-// 		p.InputDecl[param.Names[0].Name] = ValueDecl{param.Type}
-// 		fmt.Println("\t->", param.Type)
-// 	}
-//
-// 	if ftype.Results != nil {
-// 		for _, res := range ftype.Results.List {
-// 			p.OutputDecl = append(p.OutputDecl, ValueDecl{res.Type})
-// 			fmt.Println("\t<-", res.Type)
-// 		}
-// 	}
-//
-// 	// fmt.Println(ftype.Params.List)
-// 	// if len(ftype.Params.List) != 2 {
-// 	// 	return p, fmt.Errorf("service procedure should have two parameters, got: %v", ftype.Results)
-// 	// }
-// 	//
-// 	// //first param is expected to be context, grab the second:
-// 	// if inputPtr, ok := ftype.Params.List[1].Type.(*ast.StarExpr); ok {
-// 	// 	if inputIdent, ok := inputPtr.X.(*ast.Ident); ok {
-// 	// 		p.InputDecl = inputIdent
-// 	// 	}
-// 	// }
-// 	//
-// 	// if p.InputDecl == nil {
-// 	// 	return p, fmt.Errorf("failed to parse procedure input decl from token '%v'", ftype)
-// 	// }
-// 	//
-// 	// if len(ftype.Results.List) != 2 {
-// 	// 	return p, fmt.Errorf("service procedure should have two return values, got: %d", len(ftype.Results.List))
-// 	// }
-// 	//
-// 	// //second result is always error, grab the first
-// 	// if outputPtr, ok := ftype.Results.List[0].Type.(*ast.StarExpr); ok {
-// 	// 	if outputIdent, ok := outputPtr.X.(*ast.Ident); ok {
-// 	// 		p.OutputDecl = outputIdent
-// 	// 	}
-// 	// }
-// 	//
-// 	// if p.OutputDecl == nil {
-// 	// 	return p, fmt.Errorf("failed to parse procedure output decl from token '%v'", ftype)
-// 	// }
-//
-// 	return
-// }
-//
-// func parseInterface(logs *log.Logger, itype *ast.InterfaceType) (err error) {
-// 	for _, m := range itype.Methods.List {
-// 		if len(m.Names) < 1 {
-// 			continue
-// 		}
-//
-// 		if ftype, ok := m.Type.(*ast.FuncType); ok {
-// 			fmt.Println(m.Names)
-// 			decl, err := parseProcedure(logs, ftype)
-// 			if err != nil {
-// 				return fmt.Errorf("failed to parce procedure: %v", err)
-// 			}
-//
-// 			_ = decl
-// 		}
-// 	}
-//
-// 	return nil
-// }
-
 type ParamDecl struct {
 	IsPointer bool
 	FieldName string
@@ -120,17 +45,17 @@ import(
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-type ReaddirCall struct{
+type ReaddirCall struct {
 	Name string
 	Stat *fuse.Stat_t
 	Ofst int64
 }
 
-type ListxattrCall struct{
+type ListxattrCall struct {
 	Name string
 }
 
-type Sender struct{
+type Sender struct {
 	rpc interface{ Call(serviceMethod string, args interface{}, reply interface{}) error }
 	LastErr error
 }
@@ -170,16 +95,20 @@ func (rcvr *Receiver) {{$proc.Name}}(a *{{$proc.Name}}Args, r *{{$proc.Name}}Rep
 }
 
 func (sndr *Sender) {{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $j 0}}, {{end}}{{$param.Name}}  {{$param.Type}}{{end}}) {{if $proc.Results}}({{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}{{$res.Type}}{{end}}){{end}} {
-	{{if $proc.Results}}r := &{{$proc.Name}}Reply{}{{else}}r := struct{}{}{{end}}
+	{{if $proc.Results}}r := &{{$proc.Name}}Reply{}{{else}}r := &struct{}{}{{end}}
 	a := &{{$proc.Name}}Args{
 		{{range $j, $param := $proc.Params}}{{$param.FieldName}}: {{$param.Name}},
 		{{end}}
 	}
 
 	sndr.LastErr = sndr.rpc.Call("FS.{{$proc.Name}}", a, r)
+	if sndr.LastErr != nil {
+		panic("PRC Error: "+sndr.LastErr.Error())
+	}
+
 	{{range $j, $param := $proc.Params}}{{if $param.IsPointer}}*{{$param.Name}} = *r.Args.{{$param.FieldName}}{{end}}
 	{{end}}
-
+	{{if eq $proc.Name "Read"}}copy(buff, r.Args.Buff){{end}}
 	{{if eq $proc.Name "Readdir"}}
 	for _, c := range r.Fills {
 		if !fill(c.Name, c.Stat, c.Ofst) {
