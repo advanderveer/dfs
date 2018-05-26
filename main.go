@@ -37,7 +37,14 @@ func main() {
 	}
 
 	uid := os.Getuid()
+	if uid < 0 {
+		uid = 0
+	}
 	gid := os.Getgid()
+	if gid < 0 {
+		gid = 0
+	}
+
 	logs.Printf("mounting filesystem from '%s' at '%s' (uid: %d, gid: %d)", os.Args[1], os.Args[2], uid, gid)
 	defer logs.Printf("unmounted, done!")
 
