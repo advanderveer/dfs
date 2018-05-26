@@ -42,6 +42,7 @@ var t = template.Must(template.New("svr").Parse(`// Code automtically generated.
 package {{.Package}}
 
 import(
+	"fmt"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -103,7 +104,7 @@ func (sndr *Sender) {{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $
 
 	sndr.LastErr = sndr.rpc.Call("FS.{{$proc.Name}}", a, r)
 	if sndr.LastErr != nil {
-		panic("PRC Error: "+sndr.LastErr.Error())
+		fmt.Println("Transport Error:", sndr.LastErr.Error())
 	}
 
 	{{range $j, $param := $proc.Params}}{{if $param.IsPointer}}*{{$param.Name}} = *r.Args.{{$param.FieldName}}{{end}}
@@ -123,7 +124,7 @@ func (sndr *Sender) {{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $
 	}
 	{{end}}
 
-	return {{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}r.R{{$j}}{{end}}
+	return {{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}{{if eq $res.Type "int"}}errc(r.R{{$j}}){{else}}r.R{{$j}}{{end}}{{end}}
 }
 
 {{end}}

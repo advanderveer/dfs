@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -38,6 +39,8 @@ func main() {
 
 	uid := os.Getuid()
 	gid := os.Getgid()
+	fmt.Println("ENODATA", fuse.ENODATA, "ENOSYS", fuse.ENOSYS, "ENOTSUP", fuse.ENOTSUP, "ENOATTR", fuse.ENOATTR)
+	fmt.Println("fuse.S_IFDIR", fuse.S_IFDIR, "fuse.S_IFMT", fuse.S_IFMT)
 	logs.Printf("mounting filesystem from '%s' at '%s' (uid: %d, gid: %d)", os.Args[1], os.Args[2], uid, gid)
 	defer logs.Printf("unmounted, done!")
 
