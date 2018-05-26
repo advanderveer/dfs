@@ -38,4 +38,5 @@ WantedBy=multi-user.target
 EOL
 
 systemctl daemon-reload
-systemctl start ffs
+systemctl enable ffs
+systemctl restart ffs

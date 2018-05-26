@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
 	"github.com/advanderveer/dfs/ffs/nodes"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -25,11 +28,31 @@ import (
 //@TODO add a test that checks if the ino correct after new mount
 //@TODO add a test that checks if remote dial fs works with torture and fsx
 
+func testdb(ns string) (tr fdb.Transactor, ss directory.DirectorySubspace, f func()) {
+	fdb.MustAPIVersion(510)
+	db, err := fdb.OpenDefault()
+	if err != nil {
+		log.Fatal("failed to open database:", err)
+	}
+
+	dir, err := directory.CreateOrOpen(db, []string{"fdb-tests", ns}, nil)
+	if err != nil {
+		log.Fatal("failed to create or open app dir:", err)
+	}
+
+	return db, dir, func() {
+		_, err := dir.Remove(db, nil)
+		if err != nil {
+			log.Fatal("failed to remove testing dir:", err)
+		}
+	}
+}
+
 func TestQuickIO(t *testing.T) {
 	bdir, err := ioutil.TempDir("", "dfs_")
 	ok(t, err)
 
-	db, dir, clean := db(bdir)
+	db, dir, clean := testdb(bdir)
 	defer clean()
 
 	fmt.Println("scope", bdir)
