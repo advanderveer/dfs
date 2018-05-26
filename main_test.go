@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 // 2/ tools: https://github.com/billziss-gh/secfs.test
 
 //@TODO add a test that checks if the ino correct after new mount
+//@TODO add a test that checks if remote dial fs works with torture and fsx
 
 func TestQuickIO(t *testing.T) {
 	bdir, err := ioutil.TempDir("", "dfs_")
@@ -72,20 +74,20 @@ func TestQuickIO(t *testing.T) {
 				}
 
 				t.Run("basic ops", func(t *testing.T) {
-					errc := dfs.Mkdir("/foobar", 0777)
+					errc := remotefs.Mkdir("/foobar", 0777)
 					equals(t, 0, errc)
 				})
 
 				t.Run("test list xattr", func(t *testing.T) {
-					errc := dfs.Setxattr("/", "hello", []byte("bar"), 0)
+					errc := remotefs.Setxattr("/", "hello", []byte("bar"), 0)
 					equals(t, 0, errc)
 
-					errc, attr := dfs.Getxattr("/", "hello")
+					errc, attr := remotefs.Getxattr("/", "hello")
 					equals(t, 0, errc)
 					equals(t, []byte("bar"), attr)
 
 					var n int
-					equals(t, 0, dfs.Listxattr("/", func(name string) bool {
+					equals(t, 0, remotefs.Listxattr("/", func(name string) bool {
 						n++
 						equals(t, "hello", name)
 						return true
@@ -182,6 +184,30 @@ func TestQuickIO(t *testing.T) {
 					fis, err := ioutil.ReadDir(mntdir)
 					ok(t, err)
 					assert(t, len(fis) > 0, "expected at least some listings, got: %d", len(fis))
+
+					fi, err := os.Stat(filepath.Join(mntdir, "a"))
+					ok(t, err)
+					st := fi.Sys().(*syscall.Stat_t)
+					equals(t, uint32(os.Getuid()), st.Uid)
+					equals(t, uint32(os.Getgid()), st.Gid)
+
+					for _, fi := range fis {
+						st := fi.Sys().(*syscall.Stat_t)
+						equals(t, uint32(os.Getuid()), st.Uid)
+						equals(t, uint32(os.Getgid()), st.Gid)
+					}
+
+					errc, fh := remotefs.Opendir("/")
+					equals(t, 0, errc)
+
+					equals(t, 0, remotefs.Readdir(mntdir, func(name string, st *fuse.Stat_t, ofst int64) bool {
+						if st != nil {
+							equals(t, uint32(os.Getuid()), st.Uid)
+							equals(t, uint32(os.Getgid()), st.Gid)
+						}
+
+						return true
+					}, 0, fh))
 				})
 
 				time.Sleep(time.Second * 5)

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"net/rpc"
-	"time"
 )
 
 type Svr struct {
@@ -45,13 +44,4 @@ func (svr *Svr) ListenAndServe() (err error) {
 		fmt.Printf("Accepted conn from: %v\n", conn.RemoteAddr())
 		go s.ServeConn(conn)
 	}
-}
-
-func Dial(addr string) (FS, error) {
-	conn, err := net.DialTimeout("tcp", addr, time.Second*30)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial: %v", err)
-	}
-
-	return &Sender{rpc.NewClient(conn), nil}, nil
 }

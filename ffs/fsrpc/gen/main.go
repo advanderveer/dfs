@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -10,6 +11,7 @@ import (
 	"go/types"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -43,6 +45,7 @@ package {{.Package}}
 
 import(
 	"fmt"
+	"os"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -56,15 +59,6 @@ type ListxattrCall struct {
 	Name string
 }
 
-type Sender struct {
-	rpc interface{ Call(serviceMethod string, args interface{}, reply interface{}) error }
-	LastErr error
-}
-
-//Receiver receives RPC requests and returns results
-type Receiver struct {
-	fs FS
-}
 {{range $i, $proc := .Procs}}
 type {{$proc.Name}}Args struct {
 	{{range $j, $param := $proc.Params}}{{$param.FieldName}} {{$param.Type}}
@@ -82,14 +76,11 @@ func (rcvr *Receiver) {{$proc.Name}}(a *{{$proc.Name}}Args, r *{{$proc.Name}}Rep
 	{{if eq $proc.Name "Readdir"}}a.Fill = func(name string, stat *fuse.Stat_t, ofst int64) bool{
 		r.Fills = append(r.Fills, ReaddirCall{Name: name, Stat: stat, Ofst: ofst})
 		return true
-	}
-	{{else if eq $proc.Name "Listxattr"}}
+	}{{else if eq $proc.Name "Listxattr"}}
 	a.Fill = func(name string) bool{
 		r.Fills = append(r.Fills, ListxattrCall{Name: name})
 		return true
-	}
-	{{end}}
-
+	}{{end}}
 	{{if $proc.Results}}{{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}r.R{{$j}} {{end}} = {{end}}rcvr.fs.{{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $j 0}}, {{end}}a.{{$param.FieldName}} {{end}})
 	r.Args = a
 	return
@@ -112,6 +103,10 @@ func (sndr *Sender) {{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $
 	{{if eq $proc.Name "Read"}}copy(buff, r.Args.Buff){{end}}
 	{{if eq $proc.Name "Readdir"}}
 	for _, c := range r.Fills {
+		if c.Stat != nil {
+			c.Stat.Uid = uint32(os.Getuid())
+			c.Stat.Gid = uint32(os.Getgid())
+		}
 		if !fill(c.Name, c.Stat, c.Ofst) {
 			break
 		}
@@ -122,6 +117,9 @@ func (sndr *Sender) {{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $
 			break
 		}
 	}
+	{{else if eq $proc.Name "Getattr"}}
+	stat.Uid = uint32(os.Getuid())
+	stat.Gid = uint32(os.Getgid())
 	{{end}}
 
 	return {{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}{{if eq $res.Type "int"}}errc(r.R{{$j}}){{else}}r.R{{$j}}{{end}}{{end}}
@@ -221,29 +219,13 @@ func parse(logs *log.Logger, fset *token.FileSet, name string) (err error) {
 		return fmt.Errorf("failed to write output: %v", err)
 	}
 
-	// ast.Inspect(astf, func(node ast.Node) bool {
-	// 	decl, ok := node.(*ast.GenDecl)
-	// 	if !ok || decl.Tok != token.TYPE {
-	// 		return true //we care only about types
-	// 	}
-	//
-	// 	for _, spec := range decl.Specs {
-	// 		if tspec, ok := spec.(*ast.TypeSpec); ok {
-	// 			if itype, ok := tspec.Type.(*ast.InterfaceType); ok {
-	//
-	// 				err = parseInterface(logs, itype)
-	// 				if err != nil {
-	// 					err = fmt.Errorf("failed to parse service interface: %v", err)
-	// 					return false
-	// 				}
-	//
-	// 				_ = itype
-	// 			}
-	// 		}
-	// 	}
-	//
-	// 	return true
-	// })
+	cmd := exec.CommandContext(context.TODO(), "go", "fmt")
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to run go fmt")
+	}
 
 	return
 }

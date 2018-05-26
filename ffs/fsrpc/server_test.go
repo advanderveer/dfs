@@ -88,7 +88,7 @@ func TestFSRPC(t *testing.T) {
 		t.Fatal("failed to return available blocks")
 	}
 
-	sndr := &Sender{c, nil}
+	sndr := &Sender{rpc: c, LastErr: nil}
 	var _ FS = sndr //check if the rpc client statisfies the filesystem interface
 
 	stfs := &fuse.Statfs_t{}

@@ -193,10 +193,10 @@ func (self *Memfs) Chown(path string, uid uint32, gid uint32) (errc int) {
 			return -fuse.ENOENT
 		}
 		if ^uint32(0) != uid {
-			node.StatSetUid(tx, uid)
+			node.StatSetUid(tx, uid) //@TODO change owner makes no sense on our fs
 		}
 		if ^uint32(0) != gid {
-			node.StatSetGid(tx, gid)
+			node.StatSetGid(tx, gid) //@TODO change group makes no sense on our fs
 		}
 
 		node.StatSetCTim(tx, fuse.Now())
@@ -317,6 +317,7 @@ func (self *Memfs) Release(path string, fh uint64) (errc int) {
 func (self *Memfs) Opendir(path string) (errc int, fh uint64) {
 	defer trace(path)(&errc, &fh)
 	return self.nstore.TxWithErrcUint64(func(tx fdb.Transaction) (int, uint64) {
+		//@TODO this seems to fail for a non existing directory
 		return self.openNode(tx, path, true)
 	})
 
@@ -498,10 +499,7 @@ func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev ui
 	}
 
 	self.nstore.IncIno(tx)
-	// uid, gid, _ := fuse.Getcontext()
-	// uid := os.Getuid() //@TODO why can't we use fuse.GetContext() here?
-	// gid := os.Getgid() //@TODO how will we deal with this when sharing file systems between computers?
-	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uint32(501), uint32(20))
+	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, self.nstore.UID(tx), self.nstore.GID(tx))
 	if nil != data {
 		// node.SetData(tx, make([]byte, len(data)))
 		self.bstore.WriteData(node, tx, make([]byte, len(data)))

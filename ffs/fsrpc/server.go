@@ -1,6 +1,11 @@
 package fsrpc
 
 import (
+	"fmt"
+	"net"
+	"net/rpc"
+	"time"
+
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -12,9 +17,27 @@ type FS interface {
 	fuse.FileSystemSetchgtime
 }
 
-//settling on an rpc setup is largely based on:
-// - preformance benchmarks: https://github.com/cockroachdb/rpc-bench
-// - discussions about the future of net/rpc: https://github.com/golang/go/issues/16844
-// - Pros GRPC: cancelation, wide language support, type checked client-server contracts
-// - Cons GRPC: slow (see benchmarks), hard dependencies, format learning curve
-// - pro gob: handle native types for Stat and timespec more easilty
+//Receiver responds to RPC requests
+type Receiver struct {
+	fs FS
+}
+
+//Sender dispatches RPC requests
+type Sender struct {
+	rpc interface {
+		Call(serviceMethod string, args interface{}, reply interface{}) error
+	}
+	LastErr error
+}
+
+//Dial the filesystem at the provided address as the provided user and group
+func Dial(addr string) (*Sender, error) {
+	conn, err := net.DialTimeout("tcp", addr, time.Second*30)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial: %v", err)
+	}
+
+	//@TODO pass the uid/gid that we want all files to show up as
+
+	return &Sender{rpc: rpc.NewClient(conn), LastErr: nil}, nil
+}
