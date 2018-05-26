@@ -45,7 +45,6 @@ package {{.Package}}
 
 import(
 	"fmt"
-	"os"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -104,8 +103,8 @@ func (sndr *Sender) {{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $
 	{{if eq $proc.Name "Readdir"}}
 	for _, c := range r.Fills {
 		if c.Stat != nil {
-			c.Stat.Uid = uint32(os.Getuid())
-			c.Stat.Gid = uint32(os.Getgid())
+			c.Stat.Uid = sndr.uid
+			c.Stat.Gid = sndr.gid
 		}
 		if !fill(c.Name, c.Stat, c.Ofst) {
 			break
@@ -118,8 +117,8 @@ func (sndr *Sender) {{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $
 		}
 	}
 	{{else if eq $proc.Name "Getattr"}}
-	stat.Uid = uint32(os.Getuid())
-	stat.Gid = uint32(os.Getgid())
+	stat.Uid = sndr.uid
+	stat.Gid = sndr.gid
 	{{end}}
 
 	return {{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}{{if eq $res.Type "int"}}errc(r.R{{$j}}){{else}}r.R{{$j}}{{end}}{{end}}

@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"net/rpc"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -88,7 +89,7 @@ func TestFSRPC(t *testing.T) {
 		t.Fatal("failed to return available blocks")
 	}
 
-	sndr := &Sender{rpc: c, LastErr: nil}
+	sndr := &Sender{rpc: c, LastErr: nil, uid: uint32(os.Getuid()), gid: uint32(os.Getgid())}
 	var _ FS = sndr //check if the rpc client statisfies the filesystem interface
 
 	stfs := &fuse.Statfs_t{}

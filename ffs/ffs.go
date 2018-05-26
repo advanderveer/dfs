@@ -3,7 +3,6 @@ package ffs
 import (
 	"fmt"
 	"math"
-	"os"
 	"strings"
 
 	"github.com/advanderveer/dfs/ffs/blocks"
@@ -18,10 +17,7 @@ func split(path string) []string {
 }
 
 func trace(vals ...interface{}) func(vals ...interface{}) {
-	uid := os.Getuid() //@TODO why can't we use fuse.GetContext() here?
-	gid := os.Getgid() //@TODO how will we deal with this when sharing file systems between computers?
-	// uid, gid, _ := fuse.Getcontext()
-	return shared.Trace(1, fmt.Sprintf("[uid=%v,gid=%v]", uid, gid), vals...)
+	return shared.Trace(1, fmt.Sprintf("[uid=%v,gid=%v]", 1, 1), vals...)
 }
 
 func resize(slice []byte, size int64, zeroinit bool) []byte {

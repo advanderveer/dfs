@@ -79,7 +79,7 @@ func TestQuickIO(t *testing.T) {
 			go svr.ListenAndServe()
 			time.Sleep(time.Second)
 
-			remotefs, err := fsrpc.Dial(svr.Addr().String())
+			remotefs, err := fsrpc.Dial(svr.Addr().String(), os.Getuid(), os.Getgid())
 			if err != nil {
 				t.Fatal(err)
 			}

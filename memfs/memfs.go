@@ -492,6 +492,7 @@ func (self *Memfs) makeNode(path string, mode uint32, dev uint64, data []byte) i
 	}
 	self.ino++
 	uid, gid, _ := fuse.Getcontext()
+	fmt.Println("MAKENODE", uid, gid)
 	node = newNode(dev, self.ino, mode, uid, gid)
 	if nil != data {
 		node.data = make([]byte, len(data))

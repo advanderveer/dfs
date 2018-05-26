@@ -4,7 +4,6 @@ package fsrpc
 import (
 	"fmt"
 	"github.com/billziss-gh/cgofuse/fuse"
-	"os"
 )
 
 type ReaddirCall struct {
@@ -341,8 +340,8 @@ func (sndr *Sender) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 
 	*stat = *r.Args.Stat
 
-	stat.Uid = uint32(os.Getuid())
-	stat.Gid = uint32(os.Getgid())
+	stat.Uid = sndr.uid
+	stat.Gid = sndr.gid
 
 	return errc(r.R0)
 }
@@ -690,8 +689,8 @@ func (sndr *Sender) Readdir(path string, fill func(name string, stat *fuse.Stat_
 
 	for _, c := range r.Fills {
 		if c.Stat != nil {
-			c.Stat.Uid = uint32(os.Getuid())
-			c.Stat.Gid = uint32(os.Getgid())
+			c.Stat.Uid = sndr.uid
+			c.Stat.Gid = sndr.gid
 		}
 		if !fill(c.Name, c.Stat, c.Ofst) {
 			break

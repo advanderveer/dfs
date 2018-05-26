@@ -29,9 +29,9 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/go/bin/go run /root/go/src/github.com/advanderveer/dfs/ffsvr/main.go /tmp/ffsdata4 0.0.0.0:10105
-Restart=on-abort
-
+ExecStart=/usr/local/go/bin/go run /root/go/src/github.com/advanderveer/dfs/ffsvr/main.go /tmp/ffsdata5 0.0.0.0:10105
+Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
