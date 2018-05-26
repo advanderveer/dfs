@@ -20,3 +20,22 @@ git clone git@github.com:advanderveer/dfs.git $HOME/go/src/github.com/advanderve
 go get github.com/Masterminds/glide
 cd $HOME/go/src/github.com/advanderveer/dfs
 glide install
+
+cat >/etc/systemd/system/ffs.service <<EOL
+[Unit]
+Description=ffs Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/go/bin/go run /root/go/src/github.com/advanderveer/dfs/ffsvr/main.go /tmp/ffsdata4 0.0.0.0:10105
+Restart=on-abort
+
+
+[Install]
+WantedBy=multi-user.target
+EOL
+
+systemctl daemon-reload
+systemctl start ffs
