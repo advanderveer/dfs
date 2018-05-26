@@ -494,9 +494,9 @@ func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev ui
 
 	self.nstore.IncIno(tx)
 	// uid, gid, _ := fuse.Getcontext()
-	uid := os.Getuid() //@TODO why can't we use fuse.GetContext() here?
-	gid := os.Getgid() //@TODO how will we deal with this when sharing file systems between computers?
-	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uint32(uid), uint32(gid))
+	// uid := os.Getuid() //@TODO why can't we use fuse.GetContext() here?
+	// gid := os.Getgid() //@TODO how will we deal with this when sharing file systems between computers?
+	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uint32(501), uint32(20))
 	if nil != data {
 		// node.SetData(tx, make([]byte, len(data)))
 		self.bstore.WriteData(node, tx, make([]byte, len(data)))

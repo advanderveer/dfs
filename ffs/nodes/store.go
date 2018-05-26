@@ -23,7 +23,7 @@ func NewStore(tr fdb.Transactor, ss fdbdir.DirectorySubspace) *Store {
 	}
 
 	if _, err := tr.Transact(func(tx fdb.Transaction) (r interface{}, e error) {
-		store.root = store.NewNode(tx, 0, 0, fuse.S_IFDIR|00777, 0, 0) //@TODO check if its ok if the root always has ino0, tr: tr, ss: ss}
+		store.root = store.NewNode(tx, 0, 0, fuse.S_IFDIR|00777, 501, 20) //@TODO check if its ok if the root always has ino0, tr: tr, ss: ss}
 		ino := store.getIno(tx)
 		if ino == 0 {
 			store.setIno(tx, 1)
