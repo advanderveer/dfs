@@ -2,10 +2,15 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 
+	"github.com/advanderveer/dfs/ffs"
+	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
+	"github.com/advanderveer/dfs/ffs/nodes"
+	"github.com/advanderveer/dfs/memfs"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 	"github.com/billziss-gh/cgofuse/fuse"
@@ -34,7 +39,7 @@ func db(ns string) (tr fdb.Transactor, ss directory.DirectorySubspace, f func())
 func main() {
 	logs := log.New(os.Stderr, "ffs/", log.Lshortfile)
 	if len(os.Args) < 3 {
-		logs.Fatalf("ffs [addr] [mountpoint]")
+		logs.Fatalf("ffs [addr|'local'|'memfs'] [mountpoint]")
 	}
 
 	uid := os.Getuid()
@@ -49,34 +54,41 @@ func main() {
 	// 	logs.Fatalf("failed to dial: %v", err)
 	// }
 
-	// err := os.MkdirAll(os.Args[1], 0777)
-	// if err != nil {
-	// 	logs.Fatalf("failed to create block storage dir: %v", err)
-	// }
-	//
-	// // db, dir, _ := db(os.Args[1])
-	// // defer clean()
-	//
-	// // bstore, err := blocks.NewStore(os.Args[1], "blocks")
-	// // if err != nil {
-	// // 	logs.Fatalf("failed to create block store: %v", err)
-	// // }
-	// //
-	// // defer bstore.Close()
-	// // fs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore)
-	// // if err != nil {
-	// // 	logs.Fatalf("failed to create filesystem: %v", err)
-	// // }
-	//
-	// // var fsiface fuse.FileSystemInterface = fs
-	// // fsiface, err = server.NewSimpleRPCFS(fs)
-	// // if err != nil {
-	// // 	logs.Fatalf("failed to create rpc filesyste,")
-	// // }
+	var (
+		fs  fuse.FileSystemInterface
+		err error
+	)
 
-	fs, err := fsrpc.Dial(os.Args[1])
-	if err != nil {
-		log.Fatalf("failed to dial: %v", err)
+	switch os.Args[1] {
+	case "local":
+		logs.Println("using a own-mounted fs")
+		tpdir, err := ioutil.TempDir("", "ffs_")
+		if err != nil {
+			logs.Fatalf("failed to creat temp dir: %v", err)
+		}
+
+		db, dir, clean := db(tpdir)
+		defer clean()
+
+		bstore, err := blocks.NewStore(tpdir, "blocks")
+		if err != nil {
+			logs.Fatalf("failed to create block store: %v", err)
+		}
+
+		defer bstore.Close()
+		fs, err = ffs.NewFS(nodes.NewStore(db, dir), bstore)
+		if err != nil {
+			logs.Fatalf("failed to create filesystem: %v", err)
+		}
+	case "memfs":
+		logs.Println("using a memory fs")
+		fs = memfs.NewMemfs()
+	default:
+		logs.Println("using a remote fs")
+		fs, err = fsrpc.Dial(os.Args[1])
+		if err != nil {
+			log.Fatalf("failed to dial: %v", err)
+		}
 	}
 
 	host := fuse.NewFileSystemHost(fs)

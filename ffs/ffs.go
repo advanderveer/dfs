@@ -396,6 +396,11 @@ func (self *Memfs) Getxattr(path string, name string) (errc int, xatr []byte) {
 			return -fuse.ENOTSUP, nil
 		}
 
+		if strings.HasPrefix(name, "com.apple") {
+			//@TODO fixes finder crashing on our own fs, but not on memfs
+			return -fuse.ENOATTR, nil
+		}
+
 		xatr, ok := node.XAtrGet(tx, name)
 		if !ok {
 			return -fuse.ENOATTR, nil

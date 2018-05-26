@@ -14,6 +14,7 @@ package memfs
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 
@@ -95,6 +96,11 @@ type Memfs struct {
 	ino     uint64
 	root    *node_t
 	openmap map[uint64]*node_t
+}
+
+func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
+	stat.Bavail = math.MaxUint64
+	return
 }
 
 func (self *Memfs) Mknod(path string, mode uint32, dev uint64) (errc int) {
