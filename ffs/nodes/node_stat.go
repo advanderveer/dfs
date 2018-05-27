@@ -35,7 +35,7 @@ func (n *Node) StatSetSize(tx fdb.Transaction, len int64)           { n.putInt64
 func (n *Node) StatSetCTim(tx fdb.Transaction, t fuse.Timespec)     { n.putTimeSpec(tx, "ctim", t) }
 func (n *Node) StatSetMTim(tx fdb.Transaction, t fuse.Timespec)     { n.putTimeSpec(tx, "mtim", t) }
 func (n *Node) StatSetATim(tx fdb.Transaction, t fuse.Timespec)     { n.putTimeSpec(tx, "atim", t) }
-func (n *Node) StatSetBirthTim(tx fdb.Transaction, t fuse.Timespec) { n.putTimeSpec(tx, "birthtim", t) }
+func (n *Node) StatSetBirthTim(tx fdb.Transaction, t fuse.Timespec) { n.putTimeSpec(tx, "btim", t) }
 
 //@TODO use the tx.Add method instead
 func (n *Node) StatIncNlink(tx fdb.Transaction) {

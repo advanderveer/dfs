@@ -57,6 +57,7 @@ type Memfs struct {
 }
 
 func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
+	defer trace(path, stat)(&errc)
 	stat.Bavail = math.MaxUint64
 	return
 }
@@ -151,6 +152,7 @@ func (self *Memfs) Rename(oldpath string, newpath string) (errc int) {
 		if "" == newname {
 			return -fuse.EINVAL // guard against directory loop creation
 		}
+
 		if oldprnt == newprnt && oldname == newname {
 			return 0
 		}
@@ -230,6 +232,11 @@ func (self *Memfs) Open(path string, flags int) (errc int, fh uint64) {
 
 func (self *Memfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc, stat)
+	// uid, gid, _ := fuse.Getcontext() //@TODO
+	// if uid != math.MaxUint32 && gid != math.MaxUint32 && self.uid <= 0 && self.gid <= 0 {
+	// 	self.uid, self.gid = uid, gid
+	// }
+
 	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		node := self.getNode(tx, path, fh)
 		if nil == node {
@@ -494,8 +501,11 @@ func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev ui
 		return -fuse.EEXIST
 	}
 
+	uid, gid, _ := fuse.Getcontext()
+	//@TODO this is stored as is but doesn't work as expected if this fs is serving a client
+
 	self.nstore.IncIno(tx)
-	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, self.nstore.UID(tx), self.nstore.GID(tx))
+	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uid, gid)
 	if nil != data {
 		// node.SetData(tx, make([]byte, len(data)))
 		self.bstore.WriteData(node, tx, make([]byte, len(data)))
