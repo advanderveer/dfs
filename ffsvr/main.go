@@ -64,7 +64,7 @@ func main() {
 
 	svr, err := fsrpc.NewServer(fs, os.Args[2])
 	if err != nil {
-		logs.Fatalf("failed to setup filesystem server")
+		logs.Fatalf("failed to setup filesystem server: %v", err)
 	}
 
 	defer fmt.Println("exited")
