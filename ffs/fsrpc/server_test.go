@@ -65,7 +65,7 @@ func TestFSRPC(t *testing.T) {
 		t.Fatalf("failed to create filesystem: %v", err)
 	}
 
-	svr, err := NewServer(fs, ":")
+	svr, err := NewServer(fs, "localhost:")
 	if err != nil {
 		t.Fatal(err)
 	}

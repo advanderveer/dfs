@@ -60,7 +60,15 @@ type Memfs struct {
 
 func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
 	defer trace(path, stat)(&errc)
-	stat.Bavail = math.MaxUint64
+
+	//https://github.com/SerCeMan/jnr-fuse/issues/16#issuecomment-323511739
+	//VolumeInfo->TotalSize = (UINT64)stbuf.f_blocks * (UINT64)stbuf.f_frsize;
+	//VolumeInfo->FreeSize = (UINT64)stbuf.f_bfree * (UINT64)stbuf.f_frsize;
+	stat.Frsize = 1024           // Fundamental file system block size.
+	stat.Blocks = math.MaxUint32 // Total number of blocks on file system in units of Frsize.
+	stat.Bfree = stat.Blocks / 2 // Total number of free blocks.
+
+	stat.Bavail = stat.Bfree
 	return
 }
 
