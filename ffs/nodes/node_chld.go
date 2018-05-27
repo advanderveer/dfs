@@ -26,7 +26,7 @@ func (n *Node) GetChld(tx fdb.Transaction, name string) *Node {
 	}
 
 	ino := endianess.Uint64(d)
-	return &Node{sss: n.sss, ss: n.sss.Sub(int64(ino))}
+	return NewNode(n.sss, ino)
 }
 
 func (n *Node) SetChld(tx fdb.Transaction, name string, nn *Node) {

@@ -16,10 +16,10 @@ type Store struct {
 	lock sync.Mutex
 }
 
-func NewStore(tr fdb.Transactor, ss fdbdir.DirectorySubspace) *Store {
+func NewStore(tr fdb.Transactor, sss fdbdir.DirectorySubspace) *Store {
 	store := &Store{
 		tr: tr,
-		ss: ss,
+		ss: sss,
 	}
 
 	if _, err := tr.Transact(func(tx fdb.Transaction) (r interface{}, e error) {
@@ -53,13 +53,9 @@ func (store *Store) setIno(tx fdb.Transaction, ino uint64) {
 }
 
 func (store *Store) NewNode(tx fdb.Transaction, dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) *Node {
-	node := Node{
-		sss: store.ss,
-		ss:  store.ss.Sub(int64(ino)),
-	}
-
+	node := NewNode(store.ss, ino)
 	node.Init(tx, dev, ino, mode, uid, gid)
-	return &node
+	return node
 }
 
 func (store *Store) IncIno(tx fdb.Transaction) {

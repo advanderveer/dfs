@@ -14,9 +14,11 @@ import (
 
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/blocks"
+	"github.com/advanderveer/dfs/ffs/handles"
 	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -55,8 +57,10 @@ func TestFSRPC(t *testing.T) {
 		t.Fatalf("failed to create block store: %v", err)
 	}
 
+	hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
+
 	defer bstore.Close()
-	fs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore)
+	fs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore, hstore)
 	if err != nil {
 		t.Fatalf("failed to create filesystem: %v", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/advanderveer/dfs/ffs/blocks"
+	"github.com/advanderveer/dfs/ffs/handles"
 	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/billziss-gh/cgofuse/examples/shared"
@@ -49,10 +50,11 @@ type Memfs struct {
 	fuse.FileSystemBase
 	nstore *nodes.Store
 	bstore *blocks.Store
+	hstore *handles.Store
 
 	//@TODO find out if we need to store this map on the remote, maybe to act as
 	//a locking mechanis or to report recent interactions
-	openmap map[uint64]*nodes.Node
+	// openmap map[uint64]*nodes.Node
 	// openlock sync.Mutex
 }
 
@@ -332,7 +334,8 @@ func (self *Memfs) Readdir(path string,
 	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		// self.openlock.Lock()
 		// defer self.openlock.Unlock()
-		node := self.openmap[fh] //@TODO what if dir was not first openend?
+		// node := self.openmap[fh] //@TODO what if dir was not first openend?
+		node := self.hstore.Get(tx, fh)
 		sta := node.Stat(tx)
 
 		fill(".", &sta, 0)
@@ -559,7 +562,8 @@ func (self *Memfs) openNode(tx fdb.Transaction, path string, dir bool) (int, uin
 	if 1 == node.Opencnt(tx) {
 		// self.openlock.Lock()
 		// defer self.openlock.Unlock()
-		self.openmap[node.Stat(tx).Ino] = node
+		// self.openmap[node.Stat(tx).Ino] = node
+		self.hstore.Set(tx, node.Stat(tx).Ino, node)
 	}
 	return 0, node.Stat(tx).Ino
 }
@@ -567,10 +571,12 @@ func (self *Memfs) openNode(tx fdb.Transaction, path string, dir bool) (int, uin
 func (self *Memfs) closeNode(tx fdb.Transaction, fh uint64) int {
 	// self.openlock.Lock()
 	// defer self.openlock.Unlock()
-	node := self.openmap[fh]
+	// node := self.openmap[fh]
+	node := self.hstore.Get(tx, fh)
 	node.DecOpencnt(tx)
 	if 0 == node.Opencnt(tx) {
-		delete(self.openmap, node.Stat(tx).Ino)
+		// delete(self.openmap, node.Stat(tx).Ino)
+		self.hstore.Del(tx, node.Stat(tx).Ino)
 	}
 
 	return 0
@@ -583,7 +589,8 @@ func (self *Memfs) getNode(tx fdb.Transaction, path string, fh uint64) *nodes.No
 	} else {
 		// self.openlock.Lock()
 		// defer self.openlock.Unlock()
-		return self.openmap[fh]
+		// return self.openmap[fh]
+		return self.hstore.Get(tx, fh)
 	}
 }
 
@@ -607,11 +614,12 @@ func (self *Memfs) lookupNode(tx fdb.Transaction, path string, ancestor *nodes.N
 	return
 }
 
-func NewFS(nstore *nodes.Store, bstore *blocks.Store) (*Memfs, error) {
+func NewFS(nstore *nodes.Store, bstore *blocks.Store, hstore *handles.Store) (*Memfs, error) {
 	self := Memfs{}
 	self.nstore = nstore
 	self.bstore = bstore
-	self.openmap = map[uint64]*nodes.Node{}
+	self.hstore = hstore
+	// self.openmap = map[uint64]*nodes.Node{}
 	return &self, nil
 }
 

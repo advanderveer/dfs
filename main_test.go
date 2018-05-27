@@ -13,7 +13,9 @@ import (
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
+	"github.com/advanderveer/dfs/ffs/handles"
 	"github.com/advanderveer/dfs/ffs/nodes"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -43,8 +45,11 @@ func TestQuickIO(t *testing.T) {
 				t.Fatal("failed to create block store", err)
 			}
 
+			nstore := nodes.NewStore(db, dir)
+			hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
+
 			defer bstore.Close()
-			dfs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore)
+			dfs, err := ffs.NewFS(nstore, bstore, hstore)
 			ok(t, err)
 
 			svr, err := fsrpc.NewServer(dfs, ":")

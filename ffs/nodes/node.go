@@ -71,6 +71,10 @@ type Node struct {
 	ss  subspace.Subspace
 }
 
+func NewNode(sss subspace.Subspace, ino uint64) *Node {
+	return &Node{sss: sss, ss: sss.Sub(int64(ino))}
+}
+
 func (n *Node) Init(tx fdb.Transaction, dev uint64, ino uint64, mode uint32, uid uint32, gid uint32) {
 	tmsp := fuse.Now()
 	n.statSetDev(tx, dev)
