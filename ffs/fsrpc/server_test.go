@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io/ioutil"
 	"log"
-	"math"
 	"net"
 	"net/rpc"
 	"os"
@@ -60,7 +59,7 @@ func TestFSRPC(t *testing.T) {
 	hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
 
 	defer bstore.Close()
-	fs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore, hstore)
+	fs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore, hstore, func() (uint32, uint32, int) { return 1, 1, 1 })
 	if err != nil {
 		t.Fatalf("failed to create filesystem: %v", err)
 	}
@@ -89,7 +88,7 @@ func TestFSRPC(t *testing.T) {
 		t.Fatal("expected reply to contain completed args")
 	}
 
-	if reply.Args.Stat.Bavail != math.MaxUint64 {
+	if reply.Args.Stat.Bavail == 0 {
 		t.Fatal("failed to return available blocks")
 	}
 
@@ -106,7 +105,7 @@ func TestFSRPC(t *testing.T) {
 		t.Fatal("expected last error to be nil")
 	}
 
-	if stfs.Bavail != math.MaxUint64 {
+	if stfs.Bavail == 0 {
 		t.Fatalf("expected statf to return correct values, got: %#v\n", stfs)
 	}
 

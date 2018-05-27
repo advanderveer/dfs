@@ -49,7 +49,7 @@ func TestQuickIO(t *testing.T) {
 			hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
 
 			defer bstore.Close()
-			dfs, err := ffs.NewFS(nstore, bstore, hstore)
+			dfs, err := ffs.NewFS(nstore, bstore, hstore, func() (uint32, uint32, int) { return 1, 1, 1 })
 			ok(t, err)
 
 			svr, err := fsrpc.NewServer(dfs, ":")

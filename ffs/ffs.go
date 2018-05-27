@@ -51,6 +51,7 @@ type Memfs struct {
 	nstore *nodes.Store
 	bstore *blocks.Store
 	hstore *handles.Store
+	getctx func() (uint32, uint32, int)
 
 	//@TODO find out if we need to store this map on the remote, maybe to act as
 	//a locking mechanis or to report recent interactions
@@ -510,7 +511,7 @@ func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev ui
 	//when this filesystem is run on the server side the contect will be empty
 	//and always return 0,0 as uid and gui. The client is responsible for over writing
 	//these values when returning attributes
-	uid, gid, _ := fuse.Getcontext()
+	uid, gid, _ := self.getctx()
 
 	self.nstore.IncIno(tx)
 	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uid, gid)
@@ -622,8 +623,9 @@ func (self *Memfs) lookupNode(tx fdb.Transaction, path string, ancestor *nodes.N
 	return
 }
 
-func NewFS(nstore *nodes.Store, bstore *blocks.Store, hstore *handles.Store) (*Memfs, error) {
+func NewFS(nstore *nodes.Store, bstore *blocks.Store, hstore *handles.Store, getctx func() (uint32, uint32, int)) (*Memfs, error) {
 	self := Memfs{}
+	self.getctx = getctx
 	self.nstore = nstore
 	self.bstore = bstore
 	self.hstore = hstore

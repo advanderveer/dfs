@@ -3,9 +3,8 @@ package fsrpc
 
 import (
 	"fmt"
-	"math"
-
 	"github.com/billziss-gh/cgofuse/fuse"
+	"math"
 )
 
 type ReaddirCall struct {

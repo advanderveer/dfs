@@ -1,4 +1,7 @@
 #!/bin/bash
+echo 'LANG=en_US.utf-8' >> /etc/environment
+echo 'LC_ALL=en_US.utf-8' >> /etc/environment
+
 
 wget https://www.foundationdb.org/downloads/5.1.7/rhel7/installers/foundationdb-clients-5.1.7-1.el7.x86_64.rpm
 wget https://www.foundationdb.org/downloads/5.1.7/rhel7/installers/foundationdb-server-5.1.7-1.el7.x86_64.rpm
@@ -29,7 +32,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/go/bin/go run /root/go/src/github.com/advanderveer/dfs/ffsvr/main.go /tmp/ffsdata5 0.0.0.0:10105
+ExecStart=/usr/local/go/bin/go run /root/go/src/github.com/advanderveer/dfs/ffsvr/main.go /tmp/ffsdata 0.0.0.0:10101
 Restart=always
 RestartSec=3
 

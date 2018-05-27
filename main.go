@@ -71,7 +71,7 @@ func main() {
 		hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
 
 		defer bstore.Close()
-		fs, err = ffs.NewFS(nstore, bstore, hstore)
+		fs, err = ffs.NewFS(nstore, bstore, hstore, fuse.Getcontext)
 		if err != nil {
 			logs.Fatalf("failed to create filesystem: %v", err)
 		}
