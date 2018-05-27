@@ -232,11 +232,6 @@ func (self *Memfs) Open(path string, flags int) (errc int, fh uint64) {
 
 func (self *Memfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
 	defer trace(path, fh)(&errc, stat)
-	// uid, gid, _ := fuse.Getcontext() //@TODO
-	// if uid != math.MaxUint32 && gid != math.MaxUint32 && self.uid <= 0 && self.gid <= 0 {
-	// 	self.uid, self.gid = uid, gid
-	// }
-
 	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
 		node := self.getNode(tx, path, fh)
 		if nil == node {
@@ -501,8 +496,10 @@ func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev ui
 		return -fuse.EEXIST
 	}
 
+	//when this filesystem is run on the server side the contect will be empty
+	//and always return 0,0 as uid and gui. The client is responsible for over writing
+	//these values when returning attributes
 	uid, gid, _ := fuse.Getcontext()
-	//@TODO this is stored as is but doesn't work as expected if this fs is serving a client
 
 	self.nstore.IncIno(tx)
 	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uid, gid)

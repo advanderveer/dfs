@@ -14,7 +14,7 @@ function print_help {
 }
 
 function run_build-svr { #build the ffs server
-  docker build -t avanderveer/ffs -f dep.Dockerfile .
+  xgo --image=billziss/xgo-cgofuse --targets=darwin/amd64,windows/amd64 --dest bin .
 }
 
 case $1 in

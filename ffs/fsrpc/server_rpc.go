@@ -3,6 +3,8 @@ package fsrpc
 
 import (
 	"fmt"
+	"math"
+
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -34,6 +36,7 @@ func (rcvr *Receiver) Access(a *AccessArgs, r *AccessReply) (err error) {
 }
 
 func (sndr *Sender) Access(path string, mask uint32) int {
+
 	r := &AccessReply{}
 	a := &AccessArgs{
 		Path: path,
@@ -66,6 +69,7 @@ func (rcvr *Receiver) Chflags(a *ChflagsArgs, r *ChflagsReply) (err error) {
 }
 
 func (sndr *Sender) Chflags(path string, flags uint32) int {
+
 	r := &ChflagsReply{}
 	a := &ChflagsArgs{
 		Path:  path,
@@ -98,6 +102,7 @@ func (rcvr *Receiver) Chmod(a *ChmodArgs, r *ChmodReply) (err error) {
 }
 
 func (sndr *Sender) Chmod(path string, mode uint32) int {
+
 	r := &ChmodReply{}
 	a := &ChmodArgs{
 		Path: path,
@@ -131,6 +136,7 @@ func (rcvr *Receiver) Chown(a *ChownArgs, r *ChownReply) (err error) {
 }
 
 func (sndr *Sender) Chown(path string, uid uint32, gid uint32) int {
+
 	r := &ChownReply{}
 	a := &ChownArgs{
 		Path: path,
@@ -166,6 +172,7 @@ func (rcvr *Receiver) Create(a *CreateArgs, r *CreateReply) (err error) {
 }
 
 func (sndr *Sender) Create(path string, flags int, mode uint32) (int, uint64) {
+
 	r := &CreateReply{}
 	a := &CreateArgs{
 		Path:  path,
@@ -196,6 +203,7 @@ func (rcvr *Receiver) Destroy(a *DestroyArgs, r *DestroyReply) (err error) {
 }
 
 func (sndr *Sender) Destroy() {
+
 	r := &struct{}{}
 	a := &DestroyArgs{}
 
@@ -225,6 +233,7 @@ func (rcvr *Receiver) Flush(a *FlushArgs, r *FlushReply) (err error) {
 }
 
 func (sndr *Sender) Flush(path string, fh uint64) int {
+
 	r := &FlushReply{}
 	a := &FlushArgs{
 		Path: path,
@@ -258,6 +267,7 @@ func (rcvr *Receiver) Fsync(a *FsyncArgs, r *FsyncReply) (err error) {
 }
 
 func (sndr *Sender) Fsync(path string, datasync bool, fh uint64) int {
+
 	r := &FsyncReply{}
 	a := &FsyncArgs{
 		Path:     path,
@@ -292,6 +302,7 @@ func (rcvr *Receiver) Fsyncdir(a *FsyncdirArgs, r *FsyncdirReply) (err error) {
 }
 
 func (sndr *Sender) Fsyncdir(path string, datasync bool, fh uint64) int {
+
 	r := &FsyncdirReply{}
 	a := &FsyncdirArgs{
 		Path:     path,
@@ -326,6 +337,11 @@ func (rcvr *Receiver) Getattr(a *GetattrArgs, r *GetattrReply) (err error) {
 }
 
 func (sndr *Sender) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
+
+	uid, gid, _ := fuse.Getcontext() //@TODO
+	if uid != math.MaxUint32 && gid != math.MaxUint32 && sndr.uid <= 0 && sndr.gid <= 0 {
+		sndr.uid, sndr.gid = uid, gid
+	}
 	r := &GetattrReply{}
 	a := &GetattrArgs{
 		Path: path,
@@ -365,6 +381,7 @@ func (rcvr *Receiver) Getxattr(a *GetxattrArgs, r *GetxattrReply) (err error) {
 }
 
 func (sndr *Sender) Getxattr(path string, name string) (int, []byte) {
+
 	r := &GetxattrReply{}
 	a := &GetxattrArgs{
 		Path: path,
@@ -394,6 +411,7 @@ func (rcvr *Receiver) Init(a *InitArgs, r *InitReply) (err error) {
 }
 
 func (sndr *Sender) Init() {
+
 	r := &struct{}{}
 	a := &InitArgs{}
 
@@ -423,6 +441,7 @@ func (rcvr *Receiver) Link(a *LinkArgs, r *LinkReply) (err error) {
 }
 
 func (sndr *Sender) Link(oldpath string, newpath string) int {
+
 	r := &LinkReply{}
 	a := &LinkArgs{
 		Oldpath: oldpath,
@@ -461,6 +480,7 @@ func (rcvr *Receiver) Listxattr(a *ListxattrArgs, r *ListxattrReply) (err error)
 }
 
 func (sndr *Sender) Listxattr(path string, fill func(name string) bool) int {
+
 	r := &ListxattrReply{}
 	a := &ListxattrArgs{
 		Path: path,
@@ -499,6 +519,7 @@ func (rcvr *Receiver) Mkdir(a *MkdirArgs, r *MkdirReply) (err error) {
 }
 
 func (sndr *Sender) Mkdir(path string, mode uint32) int {
+
 	r := &MkdirReply{}
 	a := &MkdirArgs{
 		Path: path,
@@ -532,6 +553,7 @@ func (rcvr *Receiver) Mknod(a *MknodArgs, r *MknodReply) (err error) {
 }
 
 func (sndr *Sender) Mknod(path string, mode uint32, dev uint64) int {
+
 	r := &MknodReply{}
 	a := &MknodArgs{
 		Path: path,
@@ -566,6 +588,7 @@ func (rcvr *Receiver) Open(a *OpenArgs, r *OpenReply) (err error) {
 }
 
 func (sndr *Sender) Open(path string, flags int) (int, uint64) {
+
 	r := &OpenReply{}
 	a := &OpenArgs{
 		Path:  path,
@@ -598,6 +621,7 @@ func (rcvr *Receiver) Opendir(a *OpendirArgs, r *OpendirReply) (err error) {
 }
 
 func (sndr *Sender) Opendir(path string) (int, uint64) {
+
 	r := &OpendirReply{}
 	a := &OpendirArgs{
 		Path: path,
@@ -631,6 +655,7 @@ func (rcvr *Receiver) Read(a *ReadArgs, r *ReadReply) (err error) {
 }
 
 func (sndr *Sender) Read(path string, buff []byte, ofst int64, fh uint64) int {
+
 	r := &ReadReply{}
 	a := &ReadArgs{
 		Path: path,
@@ -674,6 +699,7 @@ func (rcvr *Receiver) Readdir(a *ReaddirArgs, r *ReaddirReply) (err error) {
 }
 
 func (sndr *Sender) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
+
 	r := &ReaddirReply{}
 	a := &ReaddirArgs{
 		Path: path,
@@ -718,6 +744,7 @@ func (rcvr *Receiver) Readlink(a *ReadlinkArgs, r *ReadlinkReply) (err error) {
 }
 
 func (sndr *Sender) Readlink(path string) (int, string) {
+
 	r := &ReadlinkReply{}
 	a := &ReadlinkArgs{
 		Path: path,
@@ -749,6 +776,7 @@ func (rcvr *Receiver) Release(a *ReleaseArgs, r *ReleaseReply) (err error) {
 }
 
 func (sndr *Sender) Release(path string, fh uint64) int {
+
 	r := &ReleaseReply{}
 	a := &ReleaseArgs{
 		Path: path,
@@ -781,6 +809,7 @@ func (rcvr *Receiver) Releasedir(a *ReleasedirArgs, r *ReleasedirReply) (err err
 }
 
 func (sndr *Sender) Releasedir(path string, fh uint64) int {
+
 	r := &ReleasedirReply{}
 	a := &ReleasedirArgs{
 		Path: path,
@@ -813,6 +842,7 @@ func (rcvr *Receiver) Removexattr(a *RemovexattrArgs, r *RemovexattrReply) (err 
 }
 
 func (sndr *Sender) Removexattr(path string, name string) int {
+
 	r := &RemovexattrReply{}
 	a := &RemovexattrArgs{
 		Path: path,
@@ -845,6 +875,7 @@ func (rcvr *Receiver) Rename(a *RenameArgs, r *RenameReply) (err error) {
 }
 
 func (sndr *Sender) Rename(oldpath string, newpath string) int {
+
 	r := &RenameReply{}
 	a := &RenameArgs{
 		Oldpath: oldpath,
@@ -876,6 +907,7 @@ func (rcvr *Receiver) Rmdir(a *RmdirArgs, r *RmdirReply) (err error) {
 }
 
 func (sndr *Sender) Rmdir(path string) int {
+
 	r := &RmdirReply{}
 	a := &RmdirArgs{
 		Path: path,
@@ -907,6 +939,7 @@ func (rcvr *Receiver) Setchgtime(a *SetchgtimeArgs, r *SetchgtimeReply) (err err
 }
 
 func (sndr *Sender) Setchgtime(path string, tmsp fuse.Timespec) int {
+
 	r := &SetchgtimeReply{}
 	a := &SetchgtimeArgs{
 		Path: path,
@@ -939,6 +972,7 @@ func (rcvr *Receiver) Setcrtime(a *SetcrtimeArgs, r *SetcrtimeReply) (err error)
 }
 
 func (sndr *Sender) Setcrtime(path string, tmsp fuse.Timespec) int {
+
 	r := &SetcrtimeReply{}
 	a := &SetcrtimeArgs{
 		Path: path,
@@ -973,6 +1007,7 @@ func (rcvr *Receiver) Setxattr(a *SetxattrArgs, r *SetxattrReply) (err error) {
 }
 
 func (sndr *Sender) Setxattr(path string, name string, value []byte, flags int) int {
+
 	r := &SetxattrReply{}
 	a := &SetxattrArgs{
 		Path:  path,
@@ -1007,6 +1042,7 @@ func (rcvr *Receiver) Statfs(a *StatfsArgs, r *StatfsReply) (err error) {
 }
 
 func (sndr *Sender) Statfs(path string, stat *fuse.Statfs_t) int {
+
 	r := &StatfsReply{}
 	a := &StatfsArgs{
 		Path: path,
@@ -1041,6 +1077,7 @@ func (rcvr *Receiver) Symlink(a *SymlinkArgs, r *SymlinkReply) (err error) {
 }
 
 func (sndr *Sender) Symlink(target string, newpath string) int {
+
 	r := &SymlinkReply{}
 	a := &SymlinkArgs{
 		Target:  target,
@@ -1074,6 +1111,7 @@ func (rcvr *Receiver) Truncate(a *TruncateArgs, r *TruncateReply) (err error) {
 }
 
 func (sndr *Sender) Truncate(path string, size int64, fh uint64) int {
+
 	r := &TruncateReply{}
 	a := &TruncateArgs{
 		Path: path,
@@ -1106,6 +1144,7 @@ func (rcvr *Receiver) Unlink(a *UnlinkArgs, r *UnlinkReply) (err error) {
 }
 
 func (sndr *Sender) Unlink(path string) int {
+
 	r := &UnlinkReply{}
 	a := &UnlinkArgs{
 		Path: path,
@@ -1137,6 +1176,7 @@ func (rcvr *Receiver) Utimens(a *UtimensArgs, r *UtimensReply) (err error) {
 }
 
 func (sndr *Sender) Utimens(path string, tmsp []fuse.Timespec) int {
+
 	r := &UtimensReply{}
 	a := &UtimensArgs{
 		Path: path,
@@ -1171,6 +1211,7 @@ func (rcvr *Receiver) Write(a *WriteArgs, r *WriteReply) (err error) {
 }
 
 func (sndr *Sender) Write(path string, buff []byte, ofst int64, fh uint64) int {
+
 	r := &WriteReply{}
 	a := &WriteArgs{
 		Path: path,

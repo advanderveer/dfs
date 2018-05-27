@@ -45,6 +45,7 @@ package {{.Package}}
 
 import(
 	"fmt"
+	"math"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -86,6 +87,11 @@ func (rcvr *Receiver) {{$proc.Name}}(a *{{$proc.Name}}Args, r *{{$proc.Name}}Rep
 }
 
 func (sndr *Sender) {{$proc.Name}}({{range $j, $param := $proc.Params}}{{if ne $j 0}}, {{end}}{{$param.Name}}  {{$param.Type}}{{end}}) {{if $proc.Results}}({{range $j, $res := $proc.Results}}{{if ne $j 0}},{{end}}{{$res.Type}}{{end}}){{end}} {
+	{{if eq $proc.Name "Getattr"}}
+		uid, gid, _ := fuse.Getcontext() //@TODO
+		if uid != math.MaxUint32 && gid != math.MaxUint32 && sndr.uid <= 0 && sndr.gid <= 0 {
+			sndr.uid, sndr.gid = uid, gid
+		}{{end}}
 	{{if $proc.Results}}r := &{{$proc.Name}}Reply{}{{else}}r := &struct{}{}{{end}}
 	a := &{{$proc.Name}}Args{
 		{{range $j, $param := $proc.Params}}{{$param.FieldName}}: {{$param.Name}},

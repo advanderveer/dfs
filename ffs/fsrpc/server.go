@@ -24,8 +24,8 @@ type Receiver struct {
 
 //Sender dispatches RPC requests
 type Sender struct {
-	uid uint32
-	gid uint32
+	uid uint32 //@TODO protect setting these with a lock
+	gid uint32 //@TODO make in inpossible to make nodes when these are not set
 	rpc interface {
 		Call(serviceMethod string, args interface{}, reply interface{}) error
 	}
@@ -33,17 +33,12 @@ type Sender struct {
 }
 
 //Dial the filesystem at the provided address as the provided user and group
-func Dial(addr string, uid, gid int) (*Sender, error) {
+func Dial(addr string) (*Sender, error) {
 	conn, err := net.DialTimeout("tcp", addr, time.Second*30)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial: %v", err)
 	}
 
-	//@TODO pass the uid/gid that we want all files to show up as
-
 	s := &Sender{rpc: rpc.NewClient(conn), LastErr: nil}
-	s.uid = uint32(uid)
-	s.gid = uint32(gid)
-
 	return s, nil
 }

@@ -55,7 +55,7 @@ func TestQuickIO(t *testing.T) {
 			go svr.ListenAndServe()
 			time.Sleep(time.Second)
 
-			remotefs, err := fsrpc.Dial(svr.Addr().String(), os.Getuid(), os.Getgid())
+			remotefs, err := fsrpc.Dial(svr.Addr().String())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -187,6 +187,7 @@ func TestQuickIO(t *testing.T) {
 					fi, err := os.Stat(filepath.Join(mntdir, "a"))
 					ok(t, err)
 					_ = fi
+					//@TODO test if uid/gid is masked correctly by client
 					// st := fi.Sys().(*syscall.Stat_t)
 					// equals(t, uint32(os.Getuid()), st.Uid)
 					// equals(t, uint32(os.Getgid()), st.Gid)

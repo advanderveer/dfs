@@ -23,7 +23,7 @@ func NewStore(tr fdb.Transactor, ss fdbdir.DirectorySubspace) *Store {
 	}
 
 	if _, err := tr.Transact(func(tx fdb.Transaction) (r interface{}, e error) {
-		store.root = store.NewNode(tx, 0, 0, fuse.S_IFDIR|00777, store.UID(tx), store.GID(tx))
+		store.root = store.NewNode(tx, 0, 0, fuse.S_IFDIR|00777, 1, 1) //@TODO do these uid/uid of the root need to be correct?
 		ino := store.getIno(tx)
 		if ino == 0 {
 			store.setIno(tx, 1)
@@ -35,14 +35,6 @@ func NewStore(tr fdb.Transactor, ss fdbdir.DirectorySubspace) *Store {
 	}
 
 	return store
-}
-
-func (store *Store) UID(tx fdb.Transaction) uint32 {
-	return 1 //@TODO now hardcoded and transformed on the client
-}
-
-func (store *Store) GID(tx fdb.Transaction) uint32 {
-	return 1 //@TODO now hardcoded and transformed on the client
 }
 
 func (store *Store) getIno(tx fdb.Transaction) (ino uint64) {

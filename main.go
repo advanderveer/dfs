@@ -41,33 +41,9 @@ func main() {
 		logs.Fatalf("ffs [addr|'local'|'memfs'] [mountpoint]")
 	}
 
-	uid := os.Getuid()
-	if uid < 0 {
-		uid = 0
-	}
-	gid := os.Getgid()
-<<<<<<< HEAD
-	if gid < 0 {
-		gid = 0
-	}
-
-	logs.Printf("mounting filesystem from '%s' at '%s' (uid: %d, gid: %d)", os.Args[1], os.Args[2], uid, gid)
+	logs.Printf("mounting filesystem from '%s' at '%s'", os.Args[1], os.Args[2])
 	defer logs.Printf("unmounted, done!")
 
-	for i := 0; i > -10; i-- {
-		fmt.Println(uint32(i))
-	}
-
-	// conn, err := net.DialTimeout("tcp", os.Args[1], time.Second*2)
-	// if err != nil {
-	// 	logs.Fatalf("failed to dial: %v", err)
-	// }
-
-=======
-	logs.Printf("mounting filesystem from '%s' at '%s' (uid: %d, gid: %d)", os.Args[1], os.Args[2], uid, gid)
-	defer logs.Printf("unmounted, done!")
-
->>>>>>> de6b79702048b35f62b40ff964a7a51c9bf3a76e
 	var (
 		fs  fuse.FileSystemInterface
 		err error
@@ -99,7 +75,7 @@ func main() {
 		fs = memfs.NewMemfs()
 	default:
 		logs.Println("using a remote fs")
-		fs, err = fsrpc.Dial(os.Args[1], uid, gid)
+		fs, err = fsrpc.Dial(os.Args[1])
 		if err != nil {
 			log.Fatalf("failed to dial: %v", err)
 		}
