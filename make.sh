@@ -17,7 +17,12 @@ function run_build-svr { #build the ffs server
   xgo --image=billziss/xgo-cgofuse --targets=darwin/amd64,windows/amd64 --dest bin .
 }
 
+function run_win-test { #test on windows
+  winfsp-tests-x64.exe --external --resilient --share-prefix=\gomemfs\share -create_allocation_test -create_fileattr_test -getfileinfo_name_test -setfileinfo_test -delete_access_test -setsecurity_test -querydir_namelen_test -reparse* -stream*
+}
+
 case $1 in
 	"build-svr") run_build-svr ;;
+	"win-test") run_win-test ;;
 	*) print_help ;;
 esac

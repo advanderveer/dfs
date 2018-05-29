@@ -34,41 +34,88 @@ func TestQuickIO(t *testing.T) {
 	defer clean()
 
 	fmt.Println("scope", bdir)
+	bstore, err := blocks.NewStore(bdir, "")
+	if err != nil {
+		t.Fatal("failed to create block store", err)
+	}
+
+	nstore := nodes.NewStore(db, dir)
+	hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
+
+	defer bstore.Close()
+	dfs, err := ffs.NewFS(nstore, bstore, hstore, func() (uint32, uint32, int) { return 1, 1, 1 })
+	ok(t, err)
+
+	svr, err := fsrpc.NewServer(dfs, ":")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go svr.ListenAndServe()
+	time.Sleep(time.Second)
+
+	remotefs, err := fsrpc.Dial(svr.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	host := fuse.NewFileSystemHost(remotefs)
+	host.SetCapReaddirPlus(true)
+
+	var mntdir string
 	if runtime.GOOS == "windows" {
-		t.Skip("no windows testing yet")
+		t.Run("windows fsp tests", func(t *testing.T) {
+			texe, err := exec.LookPath("winfsp-tests-x64.exe")
+			if err != nil {
+				t.Skipf("failed to lookup windows test utility: %v", err)
+			}
+
+			mntdir = "M:"
+
+			go func() {
+				fmt.Println("waiting for ", mntdir)
+				for {
+					fi, err := os.Stat(mntdir)
+					if err == nil && fi.IsDir() {
+						break
+					}
+				}
+
+				//
+				cmd := exec.Command(texe,
+					"--external",
+					"--resilient",
+					`--share-prefix=\gomemfs\share`,
+					"-create_allocation_test",
+					"-create_fileattr_test",
+					"-getfileinfo_name_test",
+					"-setfileinfo_test",
+					"-delete_access_test",
+					"-setsecurity_test",
+					"-querydir_namelen_test",
+					"-reparse*",
+					"-stream*")
+
+				cmd.Dir = mntdir
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				err = cmd.Run()
+				ok(t, err)
+				equals(t, true, cmd.ProcessState.Success())
+
+				time.Sleep(time.Second * 5)
+
+				//done, unmount
+				ok := host.Unmount()
+				equals(t, true, ok)
+			}()
+		})
+
 	} else {
 		t.Run("linux/osx fuzzing", func(t *testing.T) {
 			fmt.Println("blocks dir:", bdir)
 
-			bstore, err := blocks.NewStore(bdir, "")
-			if err != nil {
-				t.Fatal("failed to create block store", err)
-			}
-
-			nstore := nodes.NewStore(db, dir)
-			hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
-
-			defer bstore.Close()
-			dfs, err := ffs.NewFS(nstore, bstore, hstore, func() (uint32, uint32, int) { return 1, 1, 1 })
-			ok(t, err)
-
-			svr, err := fsrpc.NewServer(dfs, ":")
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			go svr.ListenAndServe()
-			time.Sleep(time.Second)
-
-			remotefs, err := fsrpc.Dial(svr.Addr().String())
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			host := fuse.NewFileSystemHost(remotefs)
-			host.SetCapReaddirPlus(true)
-
-			mntdir := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
+			mntdir = filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), t.Name()))
 			go func() {
 				for {
 					fi, err := os.Stat(mntdir)
@@ -223,10 +270,11 @@ func TestQuickIO(t *testing.T) {
 				ok := host.Unmount()
 				equals(t, true, ok)
 			}()
-
-			ok := host.Mount(mntdir, []string{})
-			equals(t, true, ok)
 		})
+
+		ok := host.Mount(mntdir, []string{})
+		equals(t, true, ok)
+
 	}
 
 	//think of a turn based locking mechanism, that is passed around based on general "activity" on a sub-tree: Allow lower resolution of locking and releasing (e.g every few seconds). Allow uncontented (high performance) locking of a certain subtree.
