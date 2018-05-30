@@ -52,11 +52,6 @@ type Memfs struct {
 	bstore *blocks.Store
 	hstore *handles.Store
 	getctx func() (uint32, uint32, int)
-
-	//@TODO find out if we need to store this map on the remote, maybe to act as
-	//a locking mechanis or to report recent interactions
-	// openmap map[uint64]*nodes.Node
-	// openlock sync.Mutex
 }
 
 func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
@@ -68,7 +63,6 @@ func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
 	stat.Frsize = 1024           // Fundamental file system block size.
 	stat.Blocks = math.MaxUint32 // Total number of blocks on file system in units of Frsize.
 	stat.Bfree = stat.Blocks / 2 // Total number of free blocks.
-
 	stat.Bavail = stat.Bfree
 	return
 }
@@ -306,7 +300,6 @@ func (self *Memfs) Write(path string, buff []byte, ofst int64, fh uint64) (n int
 			node.StatSetSize(tx, endofst)
 		}
 
-		//@TODO this copy is not persisted as is
 		n = copy(self.bstore.ReadData(node, tx)[ofst:endofst], buff)
 
 		tmsp := fuse.Now()
@@ -341,9 +334,7 @@ func (self *Memfs) Readdir(path string,
 	fh uint64) (errc int) {
 	defer trace(path, fill, ofst, fh)(&errc)
 	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
-		// self.openlock.Lock()
-		// defer self.openlock.Unlock()
-		// node := self.openmap[fh] //@TODO what if dir was not first openend?
+		//@TODO what if dir was not first openend?
 		node := self.hstore.Get(tx, fh)
 		sta := node.Stat(tx)
 
@@ -569,22 +560,15 @@ func (self *Memfs) openNode(tx fdb.Transaction, path string, dir bool) (int, uin
 
 	node.IncOpencnt(tx)
 	if 1 == node.Opencnt(tx) {
-		// self.openlock.Lock()
-		// defer self.openlock.Unlock()
-		// self.openmap[node.Stat(tx).Ino] = node
 		self.hstore.Set(tx, node.Stat(tx).Ino, node)
 	}
 	return 0, node.Stat(tx).Ino
 }
 
 func (self *Memfs) closeNode(tx fdb.Transaction, fh uint64) int {
-	// self.openlock.Lock()
-	// defer self.openlock.Unlock()
-	// node := self.openmap[fh]
 	node := self.hstore.Get(tx, fh)
 	node.DecOpencnt(tx)
 	if 0 == node.Opencnt(tx) {
-		// delete(self.openmap, node.Stat(tx).Ino)
 		self.hstore.Del(tx, node.Stat(tx).Ino)
 	}
 
@@ -596,9 +580,6 @@ func (self *Memfs) getNode(tx fdb.Transaction, path string, fh uint64) *nodes.No
 		_, _, node := self.lookupNode(tx, path, nil)
 		return node
 	} else {
-		// self.openlock.Lock()
-		// defer self.openlock.Unlock()
-		// return self.openmap[fh]
 		return self.hstore.Get(tx, fh)
 	}
 }
@@ -629,7 +610,6 @@ func NewFS(nstore *nodes.Store, bstore *blocks.Store, hstore *handles.Store, get
 	self.nstore = nstore
 	self.bstore = bstore
 	self.hstore = hstore
-	// self.openmap = map[uint64]*nodes.Node{}
 	return &self, nil
 }
 

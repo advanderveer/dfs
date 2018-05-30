@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -18,12 +19,6 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
-
-// Your (Storage) product is only as good as its test suite:
-// 1/ https://blogs.oracle.com/bill/entry/zfs_and_the_all_singing
-// 2/ tools: https://github.com/billziss-gh/secfs.test
-
-//@TODO add a test that checks if the ino correct after new mount
 
 func TestEnd2End(t *testing.T) {
 	bdir, err := ioutil.TempDir("", "dfs_")
@@ -77,22 +72,52 @@ func TestEnd2End(t *testing.T) {
 			}
 		}
 
-		switch runtime.GOOS {
-		case "windows":
-			WindowsEnd2End(mntdir, t)
-		case "darwin", "linux":
-			LinuxDarwinEnd2End(mntdir, remotefs, t)
+		//common test
+		time.Sleep(time.Millisecond * 200)
+		CommonEnd2End(mntdir, t)
+
+		//platform specific e2e tests
+		if !testing.Short() {
+			switch runtime.GOOS {
+			case "windows":
+				WindowsEnd2End(mntdir, t)
+			case "darwin", "linux":
+				LinuxDarwinEnd2End(mntdir, remotefs, t)
+			}
 		}
 
 		//wait a bit and unmount
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Second)
 		ok := host.Unmount()
 		equals(t, true, ok)
 	}()
 
 	//mount until either win or linux testing decides to end the mount
+	fmt.Println("Mounting...")
 	ok := host.Mount(mntdir, []string{})
 	equals(t, true, ok)
+}
+
+func CommonEnd2End(mntdir string, t *testing.T) {
+	t.Run("basic file writing", func(t *testing.T) {
+		f, err := os.Create(filepath.Join(mntdir, "bar.txt"))
+		ok(t, err)
+		defer f.Close()
+
+		n, err := f.WriteAt([]byte{0x04, 0x05, 0x06}, 3)
+		ok(t, err)
+		equals(t, 3, n)
+
+		n, err = f.WriteAt([]byte{0x01, 0x02, 0x03}, 0)
+		ok(t, err)
+		equals(t, 3, n)
+
+		buf := make([]byte, 6)
+		n, err = f.ReadAt(buf, 0)
+		ok(t, err)
+		equals(t, 6, n)
+		equals(t, true, bytes.Equal(buf, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}))
+	})
 }
 
 func WindowsEnd2End(mntdir string, t *testing.T) {
@@ -208,7 +233,6 @@ func LinuxDarwinEnd2End(mntdir string, remotefs fuse.FileSystemInterface, t *tes
 			ok(t, err)
 			equals(t, []byte{0x01}, data)
 		})
-
 	})
 
 	t.Run("read dir", func(t *testing.T) {
