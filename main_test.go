@@ -73,7 +73,7 @@ func TestEnd2End(t *testing.T) {
 		}
 
 		//common test
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Second * 5)
 		CommonEnd2End(mntdir, t)
 
 		//platform specific e2e tests

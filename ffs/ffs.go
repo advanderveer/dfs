@@ -21,32 +21,8 @@ func trace(vals ...interface{}) func(vals ...interface{}) {
 	return shared.Trace(1, fmt.Sprintf("[uid=%v,gid=%v]", 1, 1), vals...)
 }
 
-func resize(slice []byte, size int64, zeroinit bool) []byte {
-	const allocunit = 64 * 1024
-	allocsize := (size + allocunit - 1) / allocunit * allocunit
-	if cap(slice) != int(allocsize) {
-		var newslice []byte
-		{
-			defer func() {
-				if r := recover(); nil != r {
-					panic(fuse.Error(-fuse.ENOSPC))
-				}
-			}()
-			newslice = make([]byte, size, allocsize)
-		}
-		copy(newslice, slice)
-		slice = newslice
-	} else if zeroinit {
-		i := len(slice)
-		slice = slice[:size]
-		for ; len(slice) > i; i++ {
-			slice[i] = 0
-		}
-	}
-	return slice
-}
-
 type Memfs struct {
+	maxPathLength uint64
 	fuse.FileSystemBase
 	nstore *nodes.Store
 	bstore *blocks.Store
@@ -64,6 +40,7 @@ func (self *Memfs) Statfs(path string, stat *fuse.Statfs_t) (errc int) {
 	stat.Blocks = math.MaxUint32 // Total number of blocks on file system in units of Frsize.
 	stat.Bfree = stat.Blocks / 2 // Total number of free blocks.
 	stat.Bavail = stat.Bfree
+	stat.Namemax = self.maxPathLength
 	return
 }
 
@@ -139,7 +116,9 @@ func (self *Memfs) Readlink(path string) (errc int, target string) {
 			return -fuse.EINVAL, ""
 		}
 
-		return 0, string(self.bstore.ReadData(node, tx))
+		buff := make([]byte, self.maxPathLength)
+		n := self.bstore.ReadAt(tx, node, buff, 0)
+		return 0, string(buff[:n])
 	})
 }
 
@@ -255,10 +234,10 @@ func (self *Memfs) Truncate(path string, size int64, fh uint64) (errc int) {
 			return -fuse.ENOENT
 		}
 
-		self.bstore.WriteData(node, tx, resize(self.bstore.ReadData(node, tx), size, true))
-		node.StatSetSize(tx, size)
+		self.bstore.Truncate(tx, node, size)
 
 		tmsp := fuse.Now()
+		node.StatSetSize(tx, size)
 		node.StatSetCTim(tx, tmsp)
 		node.StatSetMTim(tx, tmsp)
 		return 0
@@ -279,7 +258,8 @@ func (self *Memfs) Read(path string, buff []byte, ofst int64, fh uint64) (n int)
 		if endofst < ofst {
 			return 0
 		}
-		n = copy(buff, self.bstore.ReadData(node, tx)[ofst:endofst])
+
+		n = self.bstore.ReadAt(tx, node, buff, ofst)
 		node.StatSetATim(tx, fuse.Now())
 		return
 	})
@@ -293,15 +273,7 @@ func (self *Memfs) Write(path string, buff []byte, ofst int64, fh uint64) (n int
 			return -fuse.ENOENT
 		}
 
-		endofst := ofst + int64(len(buff))
-		if endofst > node.Stat(tx).Size {
-			// node.SetData(tx, resize(self.bstore.ReadData(node, tx), endofst, true))
-			self.bstore.WriteData(node, tx, resize(self.bstore.ReadData(node, tx), endofst, true))
-			node.StatSetSize(tx, endofst)
-		}
-
-		n = copy(self.bstore.ReadData(node, tx)[ofst:endofst], buff)
-
+		n = self.bstore.WriteAt(tx, node, buff, ofst)
 		tmsp := fuse.Now()
 		node.StatSetCTim(tx, tmsp)
 		node.StatSetMTim(tx, tmsp)
@@ -507,11 +479,8 @@ func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev ui
 	self.nstore.IncIno(tx)
 	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uid, gid)
 	if nil != data {
-		// node.SetData(tx, make([]byte, len(data)))
-		self.bstore.WriteData(node, tx, make([]byte, len(data)))
+		self.bstore.WriteAt(tx, node, data, 0)
 		node.StatSetSize(tx, int64(len(data)))
-		// node.CopyData(tx, data)
-		self.bstore.CopyData(node, tx, data)
 	}
 
 	prnt.SetChld(tx, name, node)
@@ -605,7 +574,7 @@ func (self *Memfs) lookupNode(tx fdb.Transaction, path string, ancestor *nodes.N
 }
 
 func NewFS(nstore *nodes.Store, bstore *blocks.Store, hstore *handles.Store, getctx func() (uint32, uint32, int)) (*Memfs, error) {
-	self := Memfs{}
+	self := Memfs{maxPathLength: 512}
 	self.getctx = getctx
 	self.nstore = nstore
 	self.bstore = bstore
