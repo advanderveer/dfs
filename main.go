@@ -1,41 +1,14 @@
 package main
 
 import (
-	"io/ioutil"
 	"log"
 	"os"
 
 	"github.com/advanderveer/dfs/ffs"
-	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
-	"github.com/advanderveer/dfs/ffs/handles"
-	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/advanderveer/dfs/memfs"
-	"github.com/apple/foundationdb/bindings/go/src/fdb"
-	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
-	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
-
-func testdb(ns string) (tr fdb.Transactor, ss directory.DirectorySubspace, f func()) {
-	fdb.MustAPIVersion(510)
-	db, err := fdb.OpenDefault()
-	if err != nil {
-		log.Fatal("failed to open database:", err)
-	}
-
-	dir, err := directory.CreateOrOpen(db, []string{"fdb-tests", ns}, nil)
-	if err != nil {
-		log.Fatal("failed to create or open app dir:", err)
-	}
-
-	return db, dir, func() {
-		_, err := dir.Remove(db, nil)
-		if err != nil {
-			log.Fatal("failed to remove testing dir:", err)
-		}
-	}
-}
 
 func main() {
 	logs := log.New(os.Stderr, "ffs/", log.Lshortfile)
@@ -54,27 +27,14 @@ func main() {
 	switch os.Args[1] {
 	case "local":
 		logs.Println("using a own-mounted fs")
-		tpdir, err := ioutil.TempDir("", "ffs_")
+		var clean func() error
+		fs, clean, err = ffs.NewTempFS("temp")
 		if err != nil {
-			logs.Fatalf("failed to creat temp dir: %v", err)
+			logs.Fatal(err)
 		}
 
-		db, dir, clean := testdb(tpdir)
 		defer clean()
 
-		bstore, err := blocks.NewStore(tpdir, "blocks")
-		if err != nil {
-			logs.Fatalf("failed to create block store: %v", err)
-		}
-
-		nstore := nodes.NewStore(db, dir)
-		hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
-
-		defer bstore.Close()
-		fs, err = ffs.NewFS(nstore, bstore, hstore, fuse.Getcontext)
-		if err != nil {
-			logs.Fatalf("failed to create filesystem: %v", err)
-		}
 	case "memfs":
 		logs.Println("using a memory fs")
 		fs = memfs.NewMemfs()

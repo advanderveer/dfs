@@ -2,8 +2,6 @@ package fsrpc
 
 import (
 	"bytes"
-	"io/ioutil"
-	"log"
 	"net"
 	"net/rpc"
 	"os"
@@ -12,57 +10,17 @@ import (
 	"time"
 
 	"github.com/advanderveer/dfs/ffs"
-	"github.com/advanderveer/dfs/ffs/blocks"
-	"github.com/advanderveer/dfs/ffs/handles"
-	"github.com/advanderveer/dfs/ffs/nodes"
-	"github.com/apple/foundationdb/bindings/go/src/fdb"
-	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
-	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-func db() (tr fdb.Transactor, ss directory.DirectorySubspace, f func()) {
-	fdb.MustAPIVersion(510)
-	db, err := fdb.OpenDefault()
-	if err != nil {
-		log.Fatal("failed to open database:", err)
-	}
-
-	dir, err := directory.CreateOrOpen(db, []string{"fdb-tests", "litmus"}, nil)
-	if err != nil {
-		log.Fatal("failed to create or open app dir:", err)
-	}
-
-	return db, dir, func() {
-		_, err := dir.Remove(db, nil)
-		if err != nil {
-			log.Fatal("failed to remove testing dir:", err)
-		}
-	}
-}
-
 //@TODO test byte copy off read procedure
 func TestFSRPC(t *testing.T) {
-	bdir, err := ioutil.TempDir("", "dfs_")
+	fs, clean, err := ffs.NewTempFS("e2e")
 	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
+		t.Fatal(err)
 	}
 
-	db, dir, clean := db()
 	defer clean()
-
-	bstore, err := blocks.NewStore(bdir, "blocks")
-	if err != nil {
-		t.Fatalf("failed to create block store: %v", err)
-	}
-
-	hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
-
-	defer bstore.Close()
-	fs, err := ffs.NewFS(nodes.NewStore(db, dir), bstore, hstore, func() (uint32, uint32, int) { return 1, 1, 1 })
-	if err != nil {
-		t.Fatalf("failed to create filesystem: %v", err)
-	}
 
 	svr, err := NewServer(fs, "localhost:")
 	if err != nil {

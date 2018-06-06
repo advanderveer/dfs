@@ -9,3 +9,7 @@ import:
   version: e9cf4fae01b5a8ff89d0ec6b32f0d9c9f79aefdd
 - package: github.com/apple/foundationdb
   version: v5.1.7
+- package: github.com/bazil/bazil
+  version: 330f15046b11806ec3fa5beb66090ebd3ee4ccb0
+- package: github.com/codahale/blake2
+  version: 8d10d0420cbfbdc9c1164c0c4ad3457a6c3771b9

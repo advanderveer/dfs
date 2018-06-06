@@ -2,13 +2,18 @@ package ffs
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math"
+	"os"
 	"strings"
 
-	"github.com/advanderveer/dfs/ffs/blocks"
+	"bazil.org/bazil/cas/chunks"
+	"bazil.org/bazil/cas/chunks/mock"
 	"github.com/advanderveer/dfs/ffs/handles"
 	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/billziss-gh/cgofuse/examples/shared"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
@@ -25,7 +30,7 @@ type Memfs struct {
 	maxPathLength uint64
 	fuse.FileSystemBase
 	nstore *nodes.Store
-	bstore *blocks.Store
+	cstore chunks.Store
 	hstore *handles.Store
 	getctx func() (uint32, uint32, int)
 }
@@ -117,7 +122,7 @@ func (self *Memfs) Readlink(path string) (errc int, target string) {
 		}
 
 		buff := make([]byte, self.maxPathLength)
-		n := self.bstore.ReadAt(tx, node, buff, 0)
+		n := node.ReadAt(tx, self.cstore, buff, 0)
 		return 0, string(buff[:n])
 	})
 }
@@ -234,7 +239,7 @@ func (self *Memfs) Truncate(path string, size int64, fh uint64) (errc int) {
 			return -fuse.ENOENT
 		}
 
-		self.bstore.Truncate(tx, node, size)
+		node.Truncate(tx, self.cstore, size)
 
 		tmsp := fuse.Now()
 		node.StatSetSize(tx, size)
@@ -259,7 +264,7 @@ func (self *Memfs) Read(path string, buff []byte, ofst int64, fh uint64) (n int)
 			return 0
 		}
 
-		n = self.bstore.ReadAt(tx, node, buff, ofst)
+		n = node.ReadAt(tx, self.cstore, buff, ofst)
 		node.StatSetATim(tx, fuse.Now())
 		return
 	})
@@ -273,7 +278,7 @@ func (self *Memfs) Write(path string, buff []byte, ofst int64, fh uint64) (n int
 			return -fuse.ENOENT
 		}
 
-		n = self.bstore.WriteAt(tx, node, buff, ofst)
+		n = node.WriteAt(tx, self.cstore, buff, ofst)
 		tmsp := fuse.Now()
 		node.StatSetCTim(tx, tmsp)
 		node.StatSetMTim(tx, tmsp)
@@ -479,7 +484,7 @@ func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev ui
 	self.nstore.IncIno(tx)
 	node = self.nstore.NewNode(tx, dev, self.nstore.Ino(tx), mode, uid, gid)
 	if nil != data {
-		self.bstore.WriteAt(tx, node, data, 0)
+		node.WriteAt(tx, self.cstore, data, 0)
 		node.StatSetSize(tx, int64(len(data)))
 	}
 
@@ -573,13 +578,55 @@ func (self *Memfs) lookupNode(tx fdb.Transaction, path string, ancestor *nodes.N
 	return
 }
 
-func NewFS(nstore *nodes.Store, bstore *blocks.Store, hstore *handles.Store, getctx func() (uint32, uint32, int)) (*Memfs, error) {
+func NewFS(nstore *nodes.Store, cstore chunks.Store, hstore *handles.Store, getctx func() (uint32, uint32, int)) (*Memfs, error) {
 	self := Memfs{maxPathLength: 512}
 	self.getctx = getctx
 	self.nstore = nstore
-	self.bstore = bstore
+	self.cstore = cstore
 	self.hstore = hstore
 	return &self, nil
+}
+
+func NewTempFS(ns string) (fs *Memfs, clean func() error, err error) {
+	bdir, err := ioutil.TempDir("", "ffs_"+ns+"_")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fdb.MustAPIVersion(510)
+	db, err := fdb.OpenDefault()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ss, err := directory.CreateOrOpen(db, []string{"fdb-tests", ns}, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	nstore := nodes.NewStore(db, ss)
+	hstore := handles.NewStore(db, ss.Sub(tuple.Tuple{"handles"}), ss)
+	bstore := &mock.InMemory{}
+
+	if fs, err = NewFS(nstore, bstore, hstore, func() (uint32, uint32, int) {
+		return 1, 1, 1
+	}); err != nil {
+		return nil, nil, err
+	}
+
+	return fs, func() error {
+		rerr := os.RemoveAll(bdir)
+		if rerr != nil {
+			return rerr
+		}
+
+		_, rerr = ss.Remove(db, nil)
+		if rerr != nil {
+			return rerr
+		}
+
+		return nil
+	}, nil
 }
 
 var _ fuse.FileSystemInterface = (*Memfs)(nil)

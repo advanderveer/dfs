@@ -12,32 +12,18 @@ import (
 	"time"
 
 	"github.com/advanderveer/dfs/ffs"
-	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
-	"github.com/advanderveer/dfs/ffs/handles"
-	"github.com/advanderveer/dfs/ffs/nodes"
-	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
 func TestEnd2End(t *testing.T) {
-	bdir, err := ioutil.TempDir("", "dfs_")
-	ok(t, err)
-
-	db, dir, clean := testdb(bdir)
-	defer clean()
-
-	bstore, err := blocks.NewStore(bdir, "")
-	if err != nil {
-		t.Fatal("failed to create block store", err)
+	if testing.Short() {
+		t.Skip("skip e2e test due to short mode")
 	}
 
-	nstore := nodes.NewStore(db, dir)
-	hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
-
-	defer bstore.Close()
-	dfs, err := ffs.NewFS(nstore, bstore, hstore, func() (uint32, uint32, int) { return 1, 1, 1 })
+	dfs, clean, err := ffs.NewTempFS("e2e")
 	ok(t, err)
+	defer clean()
 
 	svr, err := fsrpc.NewServer(dfs, "localhost:")
 	if err != nil {
@@ -111,6 +97,9 @@ func CommonEnd2End(mntdir string, t *testing.T) {
 		n, err = f.WriteAt([]byte{0x01, 0x02, 0x03}, 0)
 		ok(t, err)
 		equals(t, 3, n)
+
+		err = f.Sync()
+		ok(t, err)
 
 		buf := make([]byte, 6)
 		n, err = f.ReadAt(buf, 0)

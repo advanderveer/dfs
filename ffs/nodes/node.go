@@ -88,4 +88,9 @@ func (n *Node) Init(tx fdb.Transaction, dev uint64, ino uint64, mode uint32, uid
 	n.StatSetCTim(tx, tmsp)
 	n.StatSetBirthTim(tx, tmsp)
 	n.StatSetFlags(tx, 0)
+
+	const kB = 1024
+	const MB = 1024 * kB
+	n.putUint32At(tx, "csize", 4*MB)
+	n.putUint32At(tx, "fanout", 64)
 }

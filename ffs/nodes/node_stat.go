@@ -7,7 +7,6 @@ import (
 
 func (n *Node) StatGetIno(tx fdb.Transaction) (ino uint64) { return n.getUint64At(tx, "ino") }
 
-//@TODO can we reduce the number of reads if we do not need the whol state
 func (n *Node) Stat(tx fdb.Transaction) fuse.Stat_t {
 	sta := fuse.Stat_t{}
 	sta.Ino = n.StatGetIno(tx)

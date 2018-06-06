@@ -1,6 +1,11 @@
 # dfs
 Another filesystem experiment
 
+## log structured file filesystem example in c
+https://github.com/sphurti/Log-Structured-Filesystem/blob/master/src/lfs.c
+
+cas: https://github.com/bazil/bazil/tree/7d1f80b37293381ba5a2bab5640ecc6b51157af4/cas/blobs
+
 ## to mount:
 go run main.go 147.75.101.31:10105 /tmp/mymnt -d
 
