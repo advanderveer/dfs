@@ -4,11 +4,32 @@ import (
 	"encoding/binary"
 	"time"
 
+	"bazil.org/bazil/cas/blobs"
+	"bazil.org/bazil/cas/chunks"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
+
+//@TODO store unpersisted blobs somewhere else (with the handle?)
+var dirtyBlobs = map[uint64]*blobs.Blob{}
+
+func (node *Node) blob(tx fdb.Transaction, cstore chunks.Store) *blobs.Blob {
+	var err error
+	ino := node.StatGetIno(tx)
+	blob, ok := dirtyBlobs[ino]
+	if !ok {
+		blob, err = blobs.Open(cstore, node.manifest(tx))
+		if err != nil {
+			panic(err)
+		}
+
+		dirtyBlobs[ino] = blob
+	}
+
+	return blob
+}
 
 var endianess = binary.LittleEndian
 

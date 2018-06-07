@@ -26,6 +26,9 @@ func TestRW(t *testing.T) {
 	n := fs.Write("foo.txt", []byte{0x01, 0x02, 0x03}, 0, fh)
 	equals(t, 3, n)
 
+	errc = fs.Flush("foo.txt", fh)
+	equals(t, 0, errc)
+
 	n = fs.Write("foo.txt", []byte{0x03, 0x04, 0x05}, 2, fh)
 	equals(t, 3, n)
 

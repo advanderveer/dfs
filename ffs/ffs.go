@@ -240,7 +240,7 @@ func (self *Memfs) Truncate(path string, size int64, fh uint64) (errc int) {
 			return -fuse.ENOENT
 		}
 
-		node.Truncate(tx, self.cstore, size)
+		node.Truncate(tx, self.cstore, size) //handle errors
 
 		tmsp := fuse.Now()
 		node.StatSetSize(tx, size)
@@ -468,6 +468,14 @@ func (self *Memfs) Setchgtime(path string, tmsp fuse.Timespec) (errc int) {
 	})
 }
 
+func (self *Memfs) Flush(path string, fh uint64) int {
+	return self.nstore.TxWithErrc(func(tx fdb.Transaction) (errc int) {
+		//@TODO if node first openend this panics
+		node := self.hstore.Get(tx, fh)
+		return node.Flush(tx, self.cstore)
+	})
+}
+
 func (self *Memfs) makeNode(tx fdb.Transaction, path string, mode uint32, dev uint64, data []byte) int {
 	prnt, name, node := self.lookupNode(tx, path, nil)
 	if nil == prnt {
@@ -542,6 +550,7 @@ func (self *Memfs) openNode(tx fdb.Transaction, path string, dir bool) (int, uin
 
 func (self *Memfs) closeNode(tx fdb.Transaction, fh uint64) int {
 	node := self.hstore.Get(tx, fh)
+	node.Flush(tx, self.cstore) //@TODO only do this for files
 	node.DecOpencnt(tx)
 	if 0 == node.Opencnt(tx) {
 		self.hstore.Del(tx, node.Stat(tx).Ino)

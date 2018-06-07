@@ -8,12 +8,14 @@ import (
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
-func (node *Node) Truncate(tx fdb.Transaction, cstore chunks.Store, size int64) (errc int) {
+func (node *Node) Flush(tx fdb.Transaction, cstore chunks.Store) (errc int) {
 	blob := node.blob(tx, cstore)
-	err := blob.Truncate(context.Background(), uint64(size))
+	m, err := blob.Save(context.Background())
 	if err != nil {
-		return -fuse.EIO //@TODO report
+		return -fuse.EIO
 	}
 
+	node.setManifest(tx, m)
+	delete(dirtyBlobs, node.StatGetIno(tx))
 	return
 }
