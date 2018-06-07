@@ -8,7 +8,8 @@ import (
 	"strings"
 
 	"bazil.org/bazil/cas/chunks"
-	"bazil.org/bazil/cas/chunks/mock"
+	"bazil.org/bazil/cas/chunks/kvchunks"
+	"bazil.org/bazil/kv/kvfiles"
 	"github.com/advanderveer/dfs/ffs/handles"
 	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
@@ -587,8 +588,15 @@ func NewFS(nstore *nodes.Store, cstore chunks.Store, hstore *handles.Store, getc
 	return &self, nil
 }
 
-func NewTempFS(ns string) (fs *Memfs, clean func() error, err error) {
-	bdir, err := ioutil.TempDir("", "ffs_"+ns+"_")
+func NewTempFS(bdir string) (fs *Memfs, clean func() error, err error) {
+	if bdir == "" {
+		bdir, err = ioutil.TempDir("", "ffs_")
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	kv, err := kvfiles.Open(bdir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -599,14 +607,14 @@ func NewTempFS(ns string) (fs *Memfs, clean func() error, err error) {
 		return nil, nil, err
 	}
 
-	ss, err := directory.CreateOrOpen(db, []string{"fdb-tests", ns}, nil)
+	ss, err := directory.CreateOrOpen(db, []string{"fdb-tests", bdir}, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	nstore := nodes.NewStore(db, ss)
 	hstore := handles.NewStore(db, ss.Sub(tuple.Tuple{"handles"}), ss)
-	bstore := &mock.InMemory{}
+	bstore := kvchunks.New(kv)
 
 	if fs, err = NewFS(nstore, bstore, hstore, func() (uint32, uint32, int) {
 		return 1, 1, 1

@@ -21,7 +21,7 @@ func TestEnd2End(t *testing.T) {
 		t.Skip("skip e2e test due to short mode")
 	}
 
-	dfs, clean, err := ffs.NewTempFS("e2e")
+	dfs, clean, err := ffs.NewTempFS("")
 	ok(t, err)
 	defer clean()
 

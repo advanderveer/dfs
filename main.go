@@ -28,7 +28,7 @@ func main() {
 	case "local":
 		logs.Println("using a own-mounted fs")
 		var clean func() error
-		fs, clean, err = ffs.NewTempFS("temp")
+		fs, clean, err = ffs.NewTempFS("")
 		if err != nil {
 			logs.Fatal(err)
 		}

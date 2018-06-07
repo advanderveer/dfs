@@ -7,13 +7,9 @@ import (
 	"os/signal"
 
 	"github.com/advanderveer/dfs/ffs"
-	"github.com/advanderveer/dfs/ffs/blocks"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
-	"github.com/advanderveer/dfs/ffs/handles"
-	"github.com/advanderveer/dfs/ffs/nodes"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
-	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 )
 
 func db(ns string) (tr fdb.Transactor, ss directory.DirectorySubspace, f func()) {
@@ -45,27 +41,12 @@ func main() {
 		logs.Fatalf("ffsvr [dbdir] [addr]")
 	}
 
-	err := os.MkdirAll(os.Args[1], 0777)
+	fs, clean, err := ffs.NewTempFS(os.Args[1])
 	if err != nil {
-		logs.Fatalf("failed to create block storage dir: %v", err)
+		logs.Fatal("failed to setup fs")
 	}
 
-	db, dir, clean := db(os.Args[1])
 	defer clean()
-
-	bstore, err := blocks.NewStore(os.Args[1], "blocks")
-	if err != nil {
-		logs.Fatalf("failed to create block store: %v", err)
-	}
-
-	nstore := nodes.NewStore(db, dir)
-	hstore := handles.NewStore(db, dir.Sub(tuple.Tuple{"handles"}), dir)
-
-	defer bstore.Close()
-	fs, err := ffs.NewFS(nstore, bstore, hstore, func() (uint32, uint32, int) { return 1, 1, 1 })
-	if err != nil {
-		logs.Fatalf("failed to create filesystem: %v", err)
-	}
 
 	svr, err := fsrpc.NewServer(fs, os.Args[2])
 	if err != nil {

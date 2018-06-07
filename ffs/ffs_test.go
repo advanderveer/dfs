@@ -11,7 +11,7 @@ import (
 )
 
 func TestRW(t *testing.T) {
-	fs, clean, err := NewTempFS("testrw")
+	fs, clean, err := NewTempFS("")
 	assert(t, fs != nil, "expected fs not to be nil")
 	ok(t, err)
 	defer clean()
