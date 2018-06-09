@@ -40,7 +40,7 @@ func main() {
 		fs = memfs.NewMemfs()
 	default:
 		logs.Println("using a remote fs")
-		fs, err = fsrpc.Dial(os.Args[1])
+		fs, err = fsrpc.DialHTTP(os.Args[1])
 		if err != nil {
 			log.Fatalf("failed to dial: %v", err)
 		}

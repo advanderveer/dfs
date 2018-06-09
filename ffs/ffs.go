@@ -605,6 +605,11 @@ func NewTempFS(bdir string) (fs *Memfs, clean func() error, err error) {
 		}
 	}
 
+	err = os.MkdirAll(bdir, 0700)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	kv, err := kvfiles.Open(bdir)
 	if err != nil {
 		return nil, nil, err

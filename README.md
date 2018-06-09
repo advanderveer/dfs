@@ -11,11 +11,14 @@ go run main.go 147.75.101.31:10105 /tmp/mymnt -d
 - correct btim vs birthtim key in node structure
 
 ## TODO
-- Reduce nr of RPC that we generate and include the base fs
-- Transform GID/UID from client
-- Transform Error codes from server to client
-- Test Remount (ino count)
-- Test Apple Finder crasching with its extended attr
+- Propertly: Transform Error codes from server platform to client platform
+- Find out why: Test Apple Finder crashing with its extended attr
+- Implement garbage collection for chunks
+- Add CoW Mechanism and snapshotting
+- Add offsite backup/restore mechanism
+- Add collaboration(locking) mechanism
+- Add docker build client
+- Add Docker run client
 
 ## Usolved intermittend windows error:
 

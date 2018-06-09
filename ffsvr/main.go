@@ -55,7 +55,7 @@ func main() {
 
 	defer fmt.Println("exited")
 	go func() {
-		fmt.Println(svr.ListenAndServe())
+		fmt.Println(svr.ListenAndServeHTTP())
 	}()
 	<-c
 }

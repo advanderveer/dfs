@@ -2,7 +2,6 @@ package fsrpc
 
 import (
 	"bytes"
-	"net"
 	"net/rpc"
 	"os"
 	"reflect"
@@ -12,6 +11,42 @@ import (
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
+
+func TestHTTPRPC(t *testing.T) {
+	fs, clean, err := ffs.NewTempFS("e2e")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer clean()
+	svr, err := NewServer(fs, "localhost:")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go svr.ListenAndServeHTTP()
+	time.Sleep(time.Second)
+
+	c, err := rpc.DialHTTP("tcp", svr.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	args := &StatfsArgs{Path: "/", Stat: &fuse.Statfs_t{}}
+	reply := &StatfsReply{}
+	err = c.Call("FS.Statfs", args, reply)
+	if err != nil {
+		t.Fatal("failed to call", err)
+	}
+
+	if reply.Args.Path != "/" {
+		t.Fatal("expected reply to contain completed args")
+	}
+
+	if reply.Args.Stat.Bavail == 0 {
+		t.Fatal("failed to return available blocks")
+	}
+}
 
 //@TODO test byte copy off read procedure
 func TestFSRPC(t *testing.T) {
@@ -29,12 +64,12 @@ func TestFSRPC(t *testing.T) {
 
 	go svr.ListenAndServe()
 	time.Sleep(time.Second)
-	conn, err := net.DialTimeout("tcp", svr.Addr().String(), time.Second)
+
+	c, err := rpc.Dial("tcp", svr.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	c := rpc.NewClient(conn)
 	args := &StatfsArgs{Path: "/", Stat: &fuse.Statfs_t{}}
 	reply := &StatfsReply{}
 	err = c.Call("FS.Statfs", args, reply)

@@ -30,9 +30,9 @@ func TestEnd2End(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	go svr.ListenAndServe()
+	go svr.ListenAndServeHTTP()
 	time.Sleep(time.Second)
-	remotefs, err := fsrpc.Dial(svr.Addr().String())
+	remotefs, err := fsrpc.DialHTTP(svr.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}

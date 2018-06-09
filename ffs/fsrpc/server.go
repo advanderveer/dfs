@@ -42,3 +42,14 @@ func Dial(addr string) (*Sender, error) {
 	s := &Sender{rpc: rpc.NewClient(conn), LastErr: nil}
 	return s, nil
 }
+
+//DialHTTP the filesystem at the provided address as the provided user and group
+func DialHTTP(addr string) (*Sender, error) {
+	c, err := rpc.DialHTTP("tcp", addr) //@TODO dial with HTTP
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial HTTP: %v", err)
+	}
+
+	s := &Sender{rpc: c, LastErr: nil}
+	return s, nil
+}
