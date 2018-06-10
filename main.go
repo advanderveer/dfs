@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
 	"github.com/advanderveer/dfs/memfs"
+	"github.com/advanderveer/dfs/msg"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/cenkalti/backoff"
@@ -62,18 +67,6 @@ func main() {
 		//exploring the ability to run docker on top of the fs
 		//@TODO move this to a package
 		go func() {
-			type lpEvent struct {
-				// Timestamp is milliseconds since epoch to match javascrits Date.getTime()
-				Timestamp int64  `json:"timestamp"`
-				Category  string `json:"category"`
-				// NOTE: Data can be anything that is able to passed to json.Marshal()
-				Data interface{} `json:"data"`
-			}
-
-			type eventResponse struct {
-				Events []lpEvent `json:"events"`
-			}
-
 			dexe, err := exec.LookPath("docker")
 			if err != nil {
 				logs.Printf("failed to find Docker executable in PATH: %v, do not register as worker", err)
@@ -94,8 +87,10 @@ func main() {
 						return errors.New("unexpected status code")
 					}
 
-					v := eventResponse{}
-					dec := json.NewDecoder(resp.Body)
+					buf := bytes.NewBuffer(nil)
+
+					v := msg.EventReponse{}
+					dec := json.NewDecoder(io.TeeReader(resp.Body, buf))
 					err = dec.Decode(&v)
 					if err != nil {
 						logs.Printf("failed to decode: %v", err)
@@ -103,7 +98,40 @@ func main() {
 					}
 
 					for _, ev := range v.Events {
-						logs.Println("event", ev.Data)
+						job := ev.Data
+						if job == nil {
+							continue
+						}
+
+						log.Printf("received job workspace: %s, tasks: %d, job: %#v", job.Workspace, len(job.Tasks), job)
+						for name, t := range job.Tasks {
+							args := []string{"run"}
+
+							log.Printf("task %s, data: %d", name, len(t.Data))
+							for src, data := range t.Data {
+								log.Printf("adding mount for data %s", src)
+								args = append(args, fmt.Sprintf(`--mount=type=bind,src=%s,dst=%s`,
+									filepath.Join(os.Args[2], job.Workspace, src),
+									data.Dest,
+								))
+							}
+
+							args = append(args, t.Image)
+							args = append(args, t.Command...)
+
+							cmd := exec.Command("docker", args...)
+							cmd.Stdout = os.Stdout
+							cmd.Stderr = os.Stderr
+
+							log.Printf("running: docker %v", cmd.Args)
+							err := cmd.Run()
+							if err != nil {
+								log.Printf("failed to run task container: %v", err)
+								continue
+							}
+
+							log.Printf("ran: docker %v", cmd.Args)
+						}
 					}
 
 					//@TODO sleep for a mimum amount (increased exponentially?)

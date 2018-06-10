@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/advanderveer/dfs/ffs"
+	"github.com/advanderveer/dfs/msg"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/hcl"
@@ -79,14 +80,17 @@ func (s *Server) runHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	v := map[string]interface{}{}
-	err = hcl.Unmarshal(buf.Bytes(), &v)
+	job := &msg.Job{}
+	err = hcl.Unmarshal(buf.Bytes(), &job)
 	if err != nil {
 		fmt.Fprintf(w, "failed to parse hcl: %v", err)
 		return
 	}
 
-	fmt.Fprintf(w, "run! %#v", v)
+	job.Workspace = filepath.Dir(fname)
+
+	fmt.Fprintf(w, "pushed job run %#v", job)
+	s.m.Publish("runs", job)
 }
 
 func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
