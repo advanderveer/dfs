@@ -7,11 +7,16 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
 func TestRW(t *testing.T) {
-	fs, clean, err := NewTempFS("")
+	fdb.MustAPIVersion(510)
+	db, err := fdb.OpenDefault()
+	ok(t, err)
+
+	fs, clean, err := NewTempFS("", db)
 	assert(t, fs != nil, "expected fs not to be nil")
 	ok(t, err)
 	defer clean()

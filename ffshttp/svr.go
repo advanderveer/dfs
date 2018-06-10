@@ -5,18 +5,20 @@ import (
 	"net/http"
 	"net/rpc"
 
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/gorilla/mux"
 	"github.com/jcuga/golongpoll"
 )
 
 type Server struct {
+	d fdb.Database
 	m *golongpoll.LongpollManager
 	l net.Listener
 	r *mux.Router
 	s *http.Server
 }
 
-func NewServer(fsrcp *rpc.Server, addr string) (s *Server, err error) {
+func NewServer(fsrcp *rpc.Server, d fdb.Database, addr string) (s *Server, err error) {
 	s = &Server{}
 	s.l, err = net.Listen("tcp", addr)
 	if err != nil {
@@ -34,6 +36,7 @@ func NewServer(fsrcp *rpc.Server, addr string) (s *Server, err error) {
 
 	s.s = &http.Server{
 		Handler: s.r,
+		//@TODO add sensible timeouts for a webserver that handles a fs
 	}
 
 	return s, nil

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"net/rpc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
 	"github.com/advanderveer/dfs/ffshttp"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -23,19 +23,23 @@ func TestEnd2End(t *testing.T) {
 		t.Skip("skip e2e test due to short mode")
 	}
 
-	dfs, clean, err := ffs.NewTempFS("")
+	fdb.MustAPIVersion(510)
+	db, err := fdb.OpenDefault()
+	ok(t, err)
+
+	dfs, clean, err := ffs.NewTempFS("", db)
 	ok(t, err)
 	defer clean()
 
 	fsr := fsrpc.New(dfs)
-	svr, err := ffshttp.NewServer(fsr, "localhost:")
+	svr, err := ffshttp.NewServer(fsr, db, "localhost:")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	go svr.Serve()
 	time.Sleep(time.Second)
-	remotefs, err := fsrpc.DialHTTP(svr.Addr().String(), rpc.DefaultRPCPath)
+	remotefs, err := fsrpc.DialHTTP(svr.Addr().String(), "/fs")
 	if err != nil {
 		t.Fatal(err)
 	}

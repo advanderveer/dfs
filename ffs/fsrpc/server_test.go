@@ -10,18 +10,25 @@ import (
 
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffshttp"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
 func TestHTTPRPC(t *testing.T) {
-	fs, clean, err := ffs.NewTempFS("e2e")
+	fdb.MustAPIVersion(510)
+	db, err := fdb.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fs, clean, err := ffs.NewTempFS("e2e", db)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	defer clean()
 	fsr := New(fs)
-	svr, err := ffshttp.NewServer(fsr, "localhost:")
+	svr, err := ffshttp.NewServer(fsr, db, "localhost:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +59,13 @@ func TestHTTPRPC(t *testing.T) {
 
 //@TODO test byte copy off read procedure
 func TestFSRPC(t *testing.T) {
-	fs, clean, err := ffs.NewTempFS("e2e")
+	fdb.MustAPIVersion(510)
+	db, err := fdb.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fs, clean, err := ffs.NewTempFS("e2e", db)
 	if err != nil {
 		t.Fatal(err)
 	}

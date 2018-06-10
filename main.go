@@ -11,6 +11,7 @@ import (
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
 	"github.com/advanderveer/dfs/memfs"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/billziss-gh/cgofuse/fuse"
 	"github.com/cenkalti/backoff"
 )
@@ -32,8 +33,16 @@ func main() {
 	switch os.Args[1] {
 	case "local":
 		logs.Println("using a own-mounted fs")
+		var err error
+
+		fdb.MustAPIVersion(510)
+		db, err := fdb.OpenDefault()
+		if err != nil {
+			logs.Fatal(err)
+		}
+
 		var clean func() error
-		fs, clean, err = ffs.NewTempFS("")
+		fs, clean, err = ffs.NewTempFS("", db)
 		if err != nil {
 			logs.Fatal(err)
 		}

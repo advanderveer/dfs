@@ -597,7 +597,7 @@ func NewFS(nstore *nodes.Store, cstore chunks.Store, hstore *handles.Store, getc
 	return &self, nil
 }
 
-func NewTempFS(bdir string) (fs *Memfs, clean func() error, err error) {
+func NewTempFS(bdir string, db fdb.Database) (fs *Memfs, clean func() error, err error) {
 	if bdir == "" {
 		bdir, err = ioutil.TempDir("", "ffs_")
 		if err != nil {
@@ -611,12 +611,6 @@ func NewTempFS(bdir string) (fs *Memfs, clean func() error, err error) {
 	}
 
 	kv, err := kvfiles.Open(bdir)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	fdb.MustAPIVersion(510)
-	db, err := fdb.OpenDefault()
 	if err != nil {
 		return nil, nil, err
 	}
