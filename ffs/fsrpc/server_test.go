@@ -28,7 +28,7 @@ func TestHTTPRPC(t *testing.T) {
 
 	defer clean()
 	fsr := New(fs)
-	svr, err := ffshttp.NewServer(fsr, db, "localhost:")
+	svr, err := ffshttp.NewServer(fsr, ffs.NewBrowser(fs), db, "localhost:")
 	if err != nil {
 		t.Fatal(err)
 	}

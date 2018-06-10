@@ -27,12 +27,12 @@ func TestEnd2End(t *testing.T) {
 	db, err := fdb.OpenDefault()
 	ok(t, err)
 
-	dfs, clean, err := ffs.NewTempFS("", db)
+	fs, clean, err := ffs.NewTempFS("", db)
 	ok(t, err)
 	defer clean()
 
-	fsr := fsrpc.New(dfs)
-	svr, err := ffshttp.NewServer(fsr, db, "localhost:")
+	fsr := fsrpc.New(fs)
+	svr, err := ffshttp.NewServer(fsr, ffs.NewBrowser(fs), db, "localhost:")
 	if err != nil {
 		t.Fatal(err)
 	}

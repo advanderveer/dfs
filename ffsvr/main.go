@@ -21,6 +21,7 @@ func main() {
 		logs.Fatalf("ffsvr [dbdir] [addr]")
 	}
 
+	fdb.MustAPIVersion(510)
 	db, err := fdb.OpenDefault()
 	if err != nil {
 		logs.Fatal(err)
@@ -31,8 +32,9 @@ func main() {
 		logs.Fatalf("failed to setup fs: %v", err)
 	}
 
-	defer clean()
-	svr, err := ffshttp.NewServer(fsrpc.New(fs), db, os.Args[2])
+	_ = clean
+	// defer clean()
+	svr, err := ffshttp.NewServer(fsrpc.New(fs), ffs.NewBrowser(fs), db, os.Args[2])
 	if err != nil {
 		logs.Fatalf("failed to create server: %v", err)
 	}
