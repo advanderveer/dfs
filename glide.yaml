@@ -18,3 +18,5 @@ import:
 - package: github.com/jcuga/golongpoll
   version: v1.1.0
 - package: github.com/nu7hatch/gouuid
+- package: github.com/hashicorp/hcl
+  version: ef8a98b0bbce4a65b5aa4c368430a80ddc533168

@@ -2,6 +2,7 @@ package ffs
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -28,6 +29,28 @@ type Browser struct {
 
 func NewBrowser(fs *Memfs) (b *Browser) {
 	b = &Browser{fs: fs}
+	return
+}
+
+func (b *Browser) Readfile(path string, w io.Writer) (err error) {
+	errc, fh := b.fs.Open(path, fuse.O_RDONLY)
+	if errc != 0 {
+		return fmt.Errorf("failed to open: %d", errc)
+	}
+
+	defer b.fs.Release("", fh)
+	buff := make([]byte, 1000)
+	ofst := int64(0)
+	for {
+		n := b.fs.Read("", buff, ofst, fh)
+		w.Write(buff[:n])
+		if n < len(buff) {
+			break
+		}
+
+		ofst += int64(n)
+	}
+
 	return
 }
 

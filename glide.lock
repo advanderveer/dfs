@@ -1,5 +1,5 @@
-hash: b45b97166ab3ac5cd7e5defdd38faa7406bc6cfaac0eb90fe46542ab06ef7d3e
-updated: 2018-06-09T14:43:19.288733+02:00
+hash: 0ba311d87e8a9fb7e12a356d173ea8c55e2d6324fcb2b6d816f41418d0811120
+updated: 2018-06-10T10:58:22.579158+02:00
 imports:
 - name: bazil.org/bazil
   version: 330f15046b11806ec3fa5beb66090ebd3ee4ccb0
@@ -37,6 +37,17 @@ imports:
   version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
 - name: github.com/gorilla/mux
   version: cb4698366aa625048f3b815af6a0dea8aef9280a
+- name: github.com/hashicorp/hcl
+  version: ef8a98b0bbce4a65b5aa4c368430a80ddc533168
+  subpackages:
+  - hcl/ast
+  - hcl/parser
+  - hcl/scanner
+  - hcl/strconv
+  - hcl/token
+  - json/parser
+  - json/scanner
+  - json/token
 - name: github.com/jcuga/golongpoll
   version: 645f5b7692d8f02ab5537866ae04a00478e91e97
 - name: github.com/nu7hatch/gouuid
