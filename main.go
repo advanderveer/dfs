@@ -106,8 +106,12 @@ func main() {
 						job := run.Job
 						log.Printf("received job workspace: %s, tasks: %d, job: %#v", job.Workspace, len(job.Tasks), job)
 						for name, t := range job.Tasks {
-							args := []string{"run"}
+							args := []string{"run",
+								"--name", fmt.Sprintf("%s_%s", run.ID, name),
+								"--log-driver", "json-file",
+							}
 
+							//@TODO run as detached container and ship logs async
 							log.Printf("task %s, data: %d", name, len(t.Data))
 							for src, data := range t.Data {
 								log.Printf("adding mount for data %s", src)
@@ -120,22 +124,37 @@ func main() {
 							args = append(args, t.Image)
 							args = append(args, t.Command...)
 
-							cmd := exec.Command("docker", args...)
-							cmd.Stdout = os.Stdout
-							cmd.Stderr = os.Stderr
-
-							log.Printf("running: docker %v", cmd.Args)
-							err := cmd.Run()
+							stdout, err := os.Create(filepath.Join(os.Args[2], job.Workspace, fmt.Sprintf("%s_%s.stdout.log", name, run.ID)))
 							if err != nil {
-								log.Printf("failed to run task container: %v", err)
-								continue
+								logs.Printf("failed to create stdout file, discarding")
+								stdout = os.Stdout
 							}
 
-							log.Printf("ran: docker %v", cmd.Args)
+							stderr, err := os.Create(filepath.Join(os.Args[2], job.Workspace, fmt.Sprintf("%s_%s.stderr.log", name, run.ID)))
+							if err != nil {
+								logs.Printf("failed to create stdout file, discarding")
+								stderr = os.Stderr
+							}
+
+							cmd := exec.Command("docker", args...)
+							cmd.Stdout = stdout
+							cmd.Stderr = stderr
+
+							//@TODO run as a logshipping package that uses Docker API
+							go func() {
+								log.Printf("running: docker %v", cmd.Args)
+								err := cmd.Run()
+								if err != nil {
+									log.Printf("failed to run task container: %v", err)
+									return
+								}
+
+								log.Printf("ran: docker %v", cmd.Args)
+							}()
 						}
 					}
 
-					//@TODO sleep for a mimum amount (increased exponentially?)
+					//@TODO sleep for a minimum amount (increased exponentially?)
 				}
 			}, backoff.NewExponentialBackOff()); err != nil {
 				logs.Printf("polling failed: %v", err)
