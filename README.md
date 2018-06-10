@@ -19,6 +19,7 @@ go run main.go 147.75.101.31:10105 /tmp/mymnt -d
 - Add collaboration(locking) mechanism
 - Add docker build client
 - Add Docker run client
+- Move Bazil cas code into our codebase
 
 ## Usolved intermittend windows error:
 

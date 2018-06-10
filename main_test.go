@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"net/rpc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
+	"github.com/advanderveer/dfs/ffshttp"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -25,14 +27,15 @@ func TestEnd2End(t *testing.T) {
 	ok(t, err)
 	defer clean()
 
-	svr, err := fsrpc.NewServer(dfs, "localhost:")
+	fsr := fsrpc.New(dfs)
+	svr, err := ffshttp.NewServer(fsr, "localhost:")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	go svr.ListenAndServeHTTP()
+	go svr.Serve()
 	time.Sleep(time.Second)
-	remotefs, err := fsrpc.DialHTTP(svr.Addr().String())
+	remotefs, err := fsrpc.DialHTTP(svr.Addr().String(), rpc.DefaultRPCPath)
 	if err != nil {
 		t.Fatal(err)
 	}

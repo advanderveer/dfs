@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/advanderveer/dfs/ffs"
+	"github.com/advanderveer/dfs/ffshttp"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
 
@@ -19,15 +20,16 @@ func TestHTTPRPC(t *testing.T) {
 	}
 
 	defer clean()
-	svr, err := NewServer(fs, "localhost:")
+	fsr := New(fs)
+	svr, err := ffshttp.NewServer(fsr, "localhost:")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	go svr.ListenAndServeHTTP()
-	time.Sleep(time.Second)
+	go svr.Serve()
+	time.Sleep(time.Second * 2)
 
-	c, err := rpc.DialHTTP("tcp", svr.Addr().String())
+	c, err := rpc.DialHTTPPath("tcp", svr.Addr().String(), "/fs")
 	if err != nil {
 		t.Fatal(err)
 	}

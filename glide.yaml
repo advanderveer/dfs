@@ -13,3 +13,8 @@ import:
   version: 330f15046b11806ec3fa5beb66090ebd3ee4ccb0
 - package: github.com/codahale/blake2
   version: 8d10d0420cbfbdc9c1164c0c4ad3457a6c3771b9
+- package: github.com/cenkalti/backoff
+  version: v2.0.0
+- package: github.com/jcuga/golongpoll
+  version: v1.1.0
+- package: github.com/nu7hatch/gouuid

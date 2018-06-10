@@ -8,6 +8,7 @@ import (
 
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
+	"github.com/advanderveer/dfs/ffshttp"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/directory"
 )
@@ -43,19 +44,19 @@ func main() {
 
 	fs, clean, err := ffs.NewTempFS(os.Args[1])
 	if err != nil {
-		logs.Fatal("failed to setup fs")
+		logs.Fatalf("failed to setup fs: %v", err)
 	}
 
 	defer clean()
-
-	svr, err := fsrpc.NewServer(fs, os.Args[2])
+	svr, err := ffshttp.NewServer(fsrpc.New(fs), os.Args[2])
 	if err != nil {
-		logs.Fatalf("failed to setup filesystem server: %v", err)
+		logs.Fatalf("failed to create server: %v", err)
 	}
 
 	defer fmt.Println("exited")
 	go func() {
-		fmt.Println(svr.ListenAndServeHTTP())
+		logs.Printf("starting http on: %v", os.Args[2])
+		logs.Println(svr.Serve())
 	}()
 	<-c
 }

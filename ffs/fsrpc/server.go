@@ -22,6 +22,10 @@ type Receiver struct {
 	fs FS
 }
 
+func NewReceiver(fs FS) *Receiver {
+	return &Receiver{fs: fs}
+}
+
 //Sender dispatches RPC requests
 type Sender struct {
 	uid uint32 //@TODO protect setting these with a lock
@@ -44,8 +48,9 @@ func Dial(addr string) (*Sender, error) {
 }
 
 //DialHTTP the filesystem at the provided address as the provided user and group
-func DialHTTP(addr string) (*Sender, error) {
-	c, err := rpc.DialHTTP("tcp", addr) //@TODO dial with HTTP
+func DialHTTP(addr, path string) (*Sender, error) {
+	//@TODO dial with exponential retry
+	c, err := rpc.DialHTTPPath("tcp", addr, path) //@TODO dial with timeout
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial HTTP: %v", err)
 	}
