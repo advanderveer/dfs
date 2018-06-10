@@ -9,6 +9,7 @@ import (
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
 	"github.com/advanderveer/dfs/ffshttp"
+	"github.com/advanderveer/dfs/model"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 )
 
@@ -32,9 +33,14 @@ func main() {
 		logs.Fatalf("failed to setup fs: %v", err)
 	}
 
+	m, clean, err := model.New(db)
+	if err != nil {
+		logs.Fatalf("failed to setup mode: %v", err)
+	}
+
 	_ = clean
 	// defer clean()
-	svr, err := ffshttp.NewServer(fsrpc.New(fs), ffs.NewBrowser(fs), db, os.Args[2])
+	svr, err := ffshttp.NewServer(fsrpc.New(fs), ffs.NewBrowser(fs), m, os.Args[2])
 	if err != nil {
 		logs.Fatalf("failed to create server: %v", err)
 	}

@@ -11,8 +11,7 @@ import (
 	"strings"
 
 	"github.com/advanderveer/dfs/ffs"
-	"github.com/advanderveer/dfs/msg"
-	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/advanderveer/dfs/model"
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/hcl"
 	"github.com/jcuga/golongpoll"
@@ -22,34 +21,46 @@ var (
 	browsePrefix = "/browse"
 )
 
+var (
+	routeNameCreateRun = "create_run"
+	routeNameListRuns  = "list_runs"
+	routeNameViewRun   = "view_run"
+	routeNameBrowse    = "browse"
+)
+
 type Server struct {
-	b *ffs.Browser
-	d fdb.Database
-	m *golongpoll.LongpollManager
-	l net.Listener
-	r *mux.Router
-	s *http.Server
+	m  *model.Model
+	b  *ffs.Browser
+	lp *golongpoll.LongpollManager
+	l  net.Listener
+	r  *mux.Router
+	s  *http.Server
 }
 
-func NewServer(fsrcp *rpc.Server, fsb *ffs.Browser, db fdb.Database, addr string) (s *Server, err error) {
-	s = &Server{b: fsb}
+func NewServer(fsrcp *rpc.Server, fsb *ffs.Browser, m *model.Model, addr string) (s *Server, err error) {
+	s = &Server{b: fsb, m: m}
 	s.l, err = net.Listen("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
 
-	s.m, err = golongpoll.StartLongpoll(golongpoll.Options{})
+	s.lp, err = golongpoll.StartLongpoll(golongpoll.Options{})
 	if err != nil {
 		return nil, err
 	}
 
 	s.r = mux.NewRouter()
 	s.r.Handle("/fs", fsrcp)
-	s.r.PathPrefix(browsePrefix).Handler(http.HandlerFunc(s.handleBrowse))
-	s.r.HandleFunc("/run", s.runHandle).Name("run")
-	s.r.HandleFunc("/runs", s.m.SubscriptionHandler)
+	s.r.PathPrefix(browsePrefix).Handler(http.HandlerFunc(s.handleBrowse)).Name(routeNameBrowse)
+	s.r.HandleFunc("/viewRun/{id}", s.viewRun).Name(routeNameViewRun)
+	s.r.HandleFunc("/createRun", s.createRun).Name(routeNameCreateRun)
+	s.r.HandleFunc("/listRuns", s.listRuns).Name(routeNameListRuns)
+	s.r.HandleFunc("/events", s.lp.SubscriptionHandler)
 	s.r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `<p><a href="browse/">browse</a></p>`)
+		browse, _ := s.r.Get(routeNameBrowse).URL()
+		listRuns, _ := s.r.Get(routeNameListRuns).URL()
+		fmt.Fprintf(w, `<p><a href="%s/">browse</a></p>`, browse.String())
+		fmt.Fprintf(w, `<p><a href="%s">list runs</a></p>`, listRuns.String())
 	})
 
 	s.s = &http.Server{
@@ -60,7 +71,29 @@ func NewServer(fsrcp *rpc.Server, fsb *ffs.Browser, db fdb.Database, addr string
 	return s, nil
 }
 
-func (s *Server) runHandle(w http.ResponseWriter, r *http.Request) {
+func (s *Server) viewRun(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	run, err := s.m.ViewRun(vars["id"])
+	if err != nil {
+		fmt.Fprintf(w, "failed to view run: %v", err)
+		return
+	}
+
+	fmt.Fprintf(w, "run: %v", run)
+}
+
+func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
+	if err := s.m.EachRun(func(r *model.Run) bool {
+		viewurl, _ := s.r.Get(routeNameViewRun).URL("id", r.ID)
+		fmt.Fprintf(w, `<p><a href="%s">run: %v</a></p>`, viewurl.String(), r.ID)
+		return true
+	}); err != nil {
+		fmt.Fprintf(w, "failed to list runs: %v", err)
+		return
+	}
+}
+
+func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
 	if err != nil {
 		fmt.Fprintf(w, "failed to parse form: %v", err)
@@ -80,7 +113,7 @@ func (s *Server) runHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := &msg.Job{}
+	job := &model.Job{}
 	err = hcl.Unmarshal(buf.Bytes(), &job)
 	if err != nil {
 		fmt.Fprintf(w, "failed to parse hcl: %v", err)
@@ -88,9 +121,14 @@ func (s *Server) runHandle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	job.Workspace = filepath.Dir(fname)
+	run, err := s.m.CreateRun(job)
+	if err != nil {
+		fmt.Fprintf(w, "failed to create run: %v", err)
+		return
+	}
 
-	fmt.Fprintf(w, "pushed job run %#v", job)
-	s.m.Publish("runs", job)
+	fmt.Fprintf(w, "created run %#v", run)
+	s.lp.Publish("runs", run)
 }
 
 func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +142,7 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 			<td>size: %db</td>
 		`, name, name, fi.Size())
 
-		runurl, _ := s.r.Get("run").URL()
+		runurl, _ := s.r.Get(routeNameCreateRun).URL()
 		if strings.HasSuffix(name, ".hcl") {
 			fmt.Fprintf(w,
 				`<td><form action="%s" method="post">

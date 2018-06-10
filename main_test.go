@@ -14,6 +14,7 @@ import (
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffs/fsrpc"
 	"github.com/advanderveer/dfs/ffshttp"
+	"github.com/advanderveer/dfs/model"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
@@ -31,8 +32,12 @@ func TestEnd2End(t *testing.T) {
 	ok(t, err)
 	defer clean()
 
+	m, clean2, err := model.New(db)
+	ok(t, err)
+	defer clean2()
+
 	fsr := fsrpc.New(fs)
-	svr, err := ffshttp.NewServer(fsr, ffs.NewBrowser(fs), db, "localhost:")
+	svr, err := ffshttp.NewServer(fsr, ffs.NewBrowser(fs), m, "localhost:")
 	if err != nil {
 		t.Fatal(err)
 	}

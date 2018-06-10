@@ -76,7 +76,7 @@ func main() {
 			logs.Printf("found docker executable '%s', register this PC as worker", dexe)
 			if err = backoff.Retry(func() (err error) {
 				for {
-					resp, err := http.Get("http://" + os.Args[1] + "/runs?timeout=10&category=runs")
+					resp, err := http.Get("http://" + os.Args[1] + "/events?timeout=10&category=runs")
 					if err != nil {
 						logs.Printf("failed get runs: %v", err)
 						return err
@@ -98,11 +98,12 @@ func main() {
 					}
 
 					for _, ev := range v.Events {
-						job := ev.Data
-						if job == nil {
+						run := ev.Data
+						if run == nil {
 							continue
 						}
 
+						job := run.Job
 						log.Printf("received job workspace: %s, tasks: %d, job: %#v", job.Workspace, len(job.Tasks), job)
 						for name, t := range job.Tasks {
 							args := []string{"run"}

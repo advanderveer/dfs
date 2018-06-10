@@ -10,6 +10,7 @@ import (
 
 	"github.com/advanderveer/dfs/ffs"
 	"github.com/advanderveer/dfs/ffshttp"
+	"github.com/advanderveer/dfs/model"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/billziss-gh/cgofuse/fuse"
 )
@@ -27,8 +28,14 @@ func TestHTTPRPC(t *testing.T) {
 	}
 
 	defer clean()
+	m, clean2, err := model.New(db)
+	if err != nil {
+		t.Fatalf("failed to setup mode: %v", err)
+	}
+
+	defer clean2()
 	fsr := New(fs)
-	svr, err := ffshttp.NewServer(fsr, ffs.NewBrowser(fs), db, "localhost:")
+	svr, err := ffshttp.NewServer(fsr, ffs.NewBrowser(fs), m, "localhost:")
 	if err != nil {
 		t.Fatal(err)
 	}
