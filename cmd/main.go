@@ -7,7 +7,6 @@ import (
 )
 
 func main() {
-
 	ui := &cli.BasicUi{
 		Reader:      os.Stdin,
 		Writer:      os.Stdout,
@@ -28,20 +27,4 @@ func main() {
 	}
 
 	os.Exit(status)
-
-	// url := "https://datajob.eu.auth0.com/oauth/token"
-	//
-	// payload := strings.NewReader("{\"grant_type\":\"password\",\"username\": \"a.vanderveer@nerdalize.com\",\"password\": \"Password1!\",\"audience\": \"api.turndisk.com\", \"client_id\": \"7VCcJU3IVivsPfirCbJGJZxEBYKP004p\", \"scope\": \"openid\"}")
-	//
-	// req, _ := http.NewRequest("POST", url, payload)
-	//
-	// req.Header.Add("content-type", "application/json")
-	//
-	// res, _ := http.DefaultClient.Do(req)
-	//
-	// defer res.Body.Close()
-	// body, _ := ioutil.ReadAll(res.Body)
-	//
-	// fmt.Println(string(body))
-
 }

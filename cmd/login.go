@@ -61,7 +61,7 @@ RETRY:
 			Password:  password,
 			GrantType: "password",
 			Audience:  "api.turndisk.com",
-			ClientID:  "7VCcJU3IVivsPfirCbJGJZxEBYKP004p",
+			ClientID:  appID,
 			Scope:     "openid",
 		}); err != nil {
 			return exit(cmd.ui, errwrap.Wrapf("failed to marshal credentials: {{err}}", err))
@@ -89,8 +89,12 @@ RETRY:
 		return exit(cmd.ui, errwrap.Wrapf("failed to decode authentication session: {{err}}", err))
 	}
 
+	_, err = sess.validatedClaims()
+	if err != nil {
+		return exit(cmd.ui, errwrap.Wrapf("failed to validate claims: {{err}}", err))
+	}
+
 	sess.Expires = time.Now().Add(time.Second * time.Duration(sess.ExpiresInSec))
-	//@TODO validate id signature
 
 	sessp, err := sessionPath()
 	if err != nil {

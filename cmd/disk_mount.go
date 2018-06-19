@@ -21,12 +21,12 @@ func (cmd *diskMount) Help() string     { return cmd.Synopsis() }
 func (cmd *diskMount) Synopsis() string { return "" }
 
 func (cmd *diskMount) Run(args []string) int {
-	sess, err := continueSession(cmd.ui, loginFactory(cmd.ui))
+	sess, claims, err := continueSession(cmd.ui, loginFactory(cmd.ui))
 	if err != nil {
 		return exit(cmd.ui, errwrap.Wrapf("failed to continue session: {{err}}", err))
 	}
 
-	fmt.Println(sess.Expires)
+	fmt.Println(sess.Expires, claims)
 
 	return 0
 }
